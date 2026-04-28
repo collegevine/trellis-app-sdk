@@ -1,0 +1,188 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  queryTinybirdPipe,
+  TrellisAppApiError
+} from "../src/index.js";
+
+const BASE_URL = "https://api.example.com/trellis/apps/api/v1/";
+const SECRET = "tas_speak-friend-and-enter";
+const PIPE = "agents__count";
+
+const fetchMock = vi.fn();
+
+beforeEach(() => {
+  vi.stubGlobal("fetch", fetchMock);
+  process.env.TRELLIS_APP_API_URL = BASE_URL;
+  process.env.TRELLIS_APP_API_SECRET = SECRET;
+  fetchMock.mockReset();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  delete process.env.TRELLIS_APP_API_URL;
+  delete process.env.TRELLIS_APP_API_SECRET;
+});
+
+describe("queryTinybirdPipe", () => {
+  it("calls the pipe with bearer auth and unwraps the render_success envelope", async () => {
+    const tinybirdBody = {
+      data: [{ name: "Frodo", count: 42 }],
+      meta: [
+        { name: "name", type: "String" },
+        { name: "count", type: "UInt64" }
+      ],
+      rows: 1
+    };
+    fetchMock.mockResolvedValue(jsonResponse(200, { data: tinybirdBody }));
+
+    const result = await queryTinybirdPipe(PIPE, { realm: "middle-earth" });
+
+    expect(result).toEqual(tinybirdBody);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [calledUrl, init] = fetchMock.mock.calls[0]!;
+    expect(calledUrl).toBe(
+      "https://api.example.com/trellis/apps/api/v1/tinybird/agents__count?realm=middle-earth"
+    );
+    expect(init.method).toBe("GET");
+    expect(init.headers.Authorization).toBe(`Bearer ${SECRET}`);
+    expect(init.headers.Accept).toBe("application/json");
+  });
+
+  it("throws TrellisAppApiError with status and parsed body on non-2xx", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(404, { error: "not_found", message: "Unknown pipe" })
+    );
+
+    const error = await captureError(() => queryTinybirdPipe("not_a_pipe"));
+
+    expect(error).toBeInstanceOf(TrellisAppApiError);
+    expect(error).toMatchObject({
+      name: "TrellisAppApiError",
+      status: 404,
+      body: { error: "not_found", message: "Unknown pipe" }
+    });
+  });
+
+  it("returns a non-JSON error body verbatim as a string", async () => {
+    fetchMock.mockResolvedValue(
+      new Response("upstream barfed", { status: 502 })
+    );
+
+    const error = await captureError(() => queryTinybirdPipe(PIPE));
+
+    expect(error).toBeInstanceOf(TrellisAppApiError);
+    expect((error as TrellisAppApiError).status).toBe(502);
+    expect((error as TrellisAppApiError).body).toBe("upstream barfed");
+  });
+
+  it("throws if TRELLIS_APP_API_URL is missing", async () => {
+    delete process.env.TRELLIS_APP_API_URL;
+    await expect(queryTinybirdPipe(PIPE)).rejects.toThrow(
+      /TRELLIS_APP_API_URL/
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("throws if TRELLIS_APP_API_SECRET is missing", async () => {
+    delete process.env.TRELLIS_APP_API_SECRET;
+    await expect(queryTinybirdPipe(PIPE)).rejects.toThrow(
+      /TRELLIS_APP_API_SECRET/
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("normalizes a base URL with no trailing slash", async () => {
+    process.env.TRELLIS_APP_API_URL =
+      "https://api.example.com/trellis/apps/api/v1";
+    fetchMock.mockResolvedValue(jsonResponse(200, { data: emptyBody() }));
+
+    await queryTinybirdPipe(PIPE);
+
+    const [calledUrl] = fetchMock.mock.calls[0]!;
+    expect(calledUrl).toBe(
+      "https://api.example.com/trellis/apps/api/v1/tinybird/agents__count"
+    );
+  });
+
+  it("encodes string, number, and boolean params", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { data: emptyBody() }));
+
+    await queryTinybirdPipe(PIPE, {
+      name: "Han Solo",
+      limit: 10,
+      include_archived: true
+    });
+
+    const [calledUrl] = fetchMock.mock.calls[0]!;
+    expect(calledUrl).toContain("name=Han+Solo");
+    expect(calledUrl).toContain("limit=10");
+    expect(calledUrl).toContain("include_archived=true");
+  });
+
+  it("drops null and undefined param values", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { data: emptyBody() }));
+
+    await queryTinybirdPipe(PIPE, {
+      name: "Frodo",
+      ring: null as unknown as string,
+      mithril: undefined as unknown as string
+    });
+
+    const [calledUrl] = fetchMock.mock.calls[0]!;
+    expect(calledUrl).toContain("name=Frodo");
+    expect(calledUrl).not.toContain("ring");
+    expect(calledUrl).not.toContain("mithril");
+  });
+
+  it("URL-encodes the pipe name", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { data: emptyBody() }));
+
+    await queryTinybirdPipe("weird name/with slash");
+
+    const [calledUrl] = fetchMock.mock.calls[0]!;
+    expect(calledUrl).toContain(
+      "/tinybird/weird%20name%2Fwith%20slash"
+    );
+  });
+
+  it("reads env vars per call, not at module load", async () => {
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(jsonResponse(200, { data: emptyBody() }))
+    );
+
+    process.env.TRELLIS_APP_API_URL = "https://first.example.com/v1/";
+    process.env.TRELLIS_APP_API_SECRET = "tas_first";
+    await queryTinybirdPipe(PIPE);
+
+    process.env.TRELLIS_APP_API_URL = "https://second.example.com/v1/";
+    process.env.TRELLIS_APP_API_SECRET = "tas_second";
+    await queryTinybirdPipe(PIPE);
+
+    const [firstUrl, firstInit] = fetchMock.mock.calls[0]!;
+    const [secondUrl, secondInit] = fetchMock.mock.calls[1]!;
+    expect(firstUrl).toContain("first.example.com");
+    expect(firstInit.headers.Authorization).toBe("Bearer tas_first");
+    expect(secondUrl).toContain("second.example.com");
+    expect(secondInit.headers.Authorization).toBe("Bearer tas_second");
+  });
+});
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+
+function emptyBody() {
+  return { data: [], meta: [], rows: 0 };
+}
+
+async function captureError(fn: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await fn();
+  } catch (err) {
+    return err;
+  }
+  throw new Error("Expected function to throw, but it did not");
+}
