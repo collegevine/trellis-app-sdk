@@ -26,13 +26,13 @@ when running locally.
 ## Usage
 
 ```ts
-import { queryTinybirdPipe } from "@collegevine/trellis-app-sdk";
+import { queryTinybirdPipe } from "@collegevine/trellis-app-sdk"
 
 const result = await queryTinybirdPipe("agents__count", {
   start_date: "2026-01-01"
-});
+})
 
-console.log(result.data);
+console.log(result.data)
 ```
 
 The school and agent-instance scope are filled in server-side from the
@@ -43,13 +43,13 @@ deployment; do not pass `school_id` or `agent_instance_id` yourself.
 Any non-2xx response throws `TrellisAppApiError`:
 
 ```ts
-import { TrellisAppApiError } from "@collegevine/trellis-app-sdk";
+import { TrellisAppApiError } from "@collegevine/trellis-app-sdk"
 
 try {
-  await queryTinybirdPipe("not_a_real_pipe");
+  await queryTinybirdPipe("not_a_real_pipe")
 } catch (err) {
   if (err instanceof TrellisAppApiError) {
-    console.error(err.status, err.body);
+    console.error(err.status, err.body)
   }
 }
 ```
