@@ -25,6 +25,8 @@ when running locally.
 
 ## Usage
 
+### Tinybird
+
 ```ts
 import { queryTinybirdPipe } from "@collegevine/trellis-app-sdk"
 
@@ -37,6 +39,36 @@ console.log(result.data)
 
 The school and agent-instance scope are filled in server-side from the
 deployment; do not pass `school_id` or `agent_instance_id` yourself.
+
+### Slate
+
+For deployments backed by an agent whose product has Slate credentials
+configured, run a read-only SQL query against the school's Slate CRM:
+
+```ts
+import { querySlate } from "@collegevine/trellis-app-sdk"
+
+const { columns, rows } = await querySlate(
+  "SELECT TOP 100 first_name, last_name FROM person"
+)
+
+console.log(columns) // ["first_name", "last_name"]
+console.log(rows[0]) // ["Frodo", "Baggins"]
+```
+
+`rows` come back as arrays in `columns` order. For typed access, pass a
+tuple type:
+
+```ts
+const { rows } = await querySlate<[string, string]>(
+  "SELECT first_name, last_name FROM person"
+)
+```
+
+Queries are aborted after 25 seconds. The Slate Direct SQL endpoint is
+read-only on the Slate side. Deployments without an agent or whose
+product has no Slate credential receive `slate_not_configured` (HTTP
+422).
 
 ## Errors
 
