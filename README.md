@@ -1,10 +1,11 @@
 # @collegevine/trellis-app-sdk
 
 Server-side SDK for Trellis Apps. Calls the Trellis App API on your
-behalf using the deployment-issued bearer secret.
+behalf, transparently switching between two authentication modes
+chosen at deploy time.
 
-This package is server-only. The bearer secret must never be exposed to
-the browser.
+This package is server-only. Credentials must never be exposed to the
+browser.
 
 ## Install
 
@@ -14,14 +15,82 @@ npm install github:collegevine/trellis-app-sdk
 
 ## Required environment
 
-The SDK reads two variables on every call. They are injected
-automatically into Vercel-deployed Trellis Apps; supply them yourself
-when running locally.
+Every Trellis App, regardless of mode, gets these:
 
-| Variable                   | Purpose                                  |
-| -------------------------- | ---------------------------------------- |
-| `TRELLIS_APP_API_URL`      | Base URL of the Trellis App API.         |
-| `TRELLIS_APP_API_SECRET`   | Per-deployment bearer secret.            |
+| Variable                | Purpose                                  |
+| ----------------------- | ---------------------------------------- |
+| `TRELLIS_APP_API_URL`   | Base URL of the Trellis App API.         |
+| `TRELLIS_APP_AUTH_MODE` | `anonymous` or `authenticated`.          |
+
+Anonymous-mode apps additionally get:
+
+| Variable                | Purpose                                  |
+| ----------------------- | ---------------------------------------- |
+| `TRELLIS_APP_API_SECRET`| Per-deployment bearer secret.            |
+
+Authenticated-mode apps additionally get:
+
+| Variable                    | Purpose                                |
+| --------------------------- | -------------------------------------- |
+| `TRELLIS_APP_API_SECRET`    | Confidential client secret used at the |
+|                             | OAuth token-exchange endpoint only.    |
+| `TRELLIS_APP_AUTHORIZE_URL` | URL of the Rails authorize endpoint,   |
+|                             | with `app_id` already baked into the   |
+|                             | query string.                          |
+
+These are injected automatically into Vercel-deployed Trellis Apps;
+supply them yourself when running locally.
+
+## Authentication modes
+
+### Anonymous
+
+The SDK uses `TRELLIS_APP_API_SECRET` on every call. The deployed app
+serves all visitors without sign-in.
+
+### Authenticated
+
+End users sign in through the main CollegeVine Rails app, the SDK
+forwards a per-user access token to the API, and pages are gated by
+middleware.
+
+The agent does not write `middleware.ts`. Trellis injects it into the
+deployed file set (on top of the agent's tarball) whenever an app is
+deployed in authenticated mode. The injected content is just a single
+re-export from this package, equivalent to:
+
+```ts
+export { middleware, config } from "@collegevine/trellis-app-sdk/auth/middleware"
+```
+
+The middleware:
+
+- Gates every non-static path: missing or expired session redirects
+  to the auth flow.
+- Serves the three OAuth control paths (`login`, `callback`, `logout`)
+  itself; no extra route handlers needed.
+
+Anonymous-mode apps do not get a `middleware.ts` at all.
+
+To read the signed-in user from a server component or route handler:
+
+```ts
+import { getTrellisUser } from "@collegevine/trellis-app-sdk/auth/server"
+
+export default async function Page() {
+  const user = await getTrellisUser()
+  return <p>Hello, {user?.name ?? "there"}</p>
+}
+```
+
+The user shape is `{ name: string | null }`. The SDK deliberately does
+not surface user id or email to the deployed app; the API call itself
+is already scoped to the signed-in user on the server side, so the
+app does not need to identify them. `getTrellisUser()` returns `null`
+when there is no live session; in practice the middleware will have
+redirected before the page renders.
+
+A "Sign out" link is just a link to `/api/trellis-auth/logout`.
 
 ## Usage
 
@@ -37,8 +106,8 @@ const result = await queryTinybirdPipe("agents__count", {
 console.log(result.data)
 ```
 
-The school and agent-instance scope are filled in server-side from the
-deployment; do not pass `school_id` or `agent_instance_id` yourself.
+The school and agent-instance scope are filled in server-side; do not
+pass `school_id` or `agent_instance_id` yourself.
 
 ### Slate
 
@@ -85,6 +154,13 @@ try {
   }
 }
 ```
+
+In authenticated mode, a 401 from the SDK with no body indicates the
+session cookie was missing or expired; the middleware should have
+redirected the user to `/api/trellis-auth/login` before the API call
+reached the SDK, so seeing this error usually means the middleware was
+not mounted or the page was reached through some path the matcher
+excludes.
 
 ## Development
 
