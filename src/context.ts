@@ -1,10 +1,4 @@
-// Per-request "ambient" state, propagated across async/await using
-// Node's AsyncLocalStorage. Direct analog of .NET's AsyncLocal<T>.
-//
-// The Lambda adapter populates the store once per invocation, before
-// either the auth middleware or any user code runs. Server-side
-// helpers (e.g., getTrellisUser) read from it without having to thread
-// the Request argument through every call site.
+// Per-request "ambient" state, propagated across async/await using Node's AsyncLocalStorage.
 
 import { AsyncLocalStorage } from "node:async_hooks"
 
