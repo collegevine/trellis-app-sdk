@@ -9,8 +9,10 @@ import {
   SESSION_COOKIE,
   decodeCookie,
   isSessionLive,
+  readCookie,
   type SessionCookie
 } from "./auth/cookies.js"
+import { currentRequest } from "./context.js"
 
 export class TrellisAppApiError extends Error {
   readonly status: number
@@ -36,16 +38,17 @@ export interface RequestOptions {
 // Authorization header depends on the deployment's auth mode:
 //
 //   - anonymous (default): TRELLIS_APP_API_SECRET from env.
-//   - authenticated: per-user access token from the SESSION cookie, so
-//     the API call is scoped to the signed-in user. The middleware is
-//     responsible for ensuring a valid session before the request
-//     handler runs; the SDK throws 401 if the cookie is missing.
+//   - authenticated: per-user access token read from the session cookie
+//     on the current request, so the API call is scoped to the signed-
+//     in user. The auth middleware is responsible for ensuring a valid
+//     session before user code runs; the SDK throws 401 if the cookie
+//     is missing or expired.
 export async function request<T>(
   path: string,
   options: RequestOptions = {}
 ): Promise<T> {
   const baseUrl = readEnv(ENV_TRELLIS_APP_API_URL)
-  const authorization = await authorizationHeader()
+  const authorization = authorizationHeader()
 
   const headers: Record<string, string> = {
     Authorization: authorization,
@@ -72,21 +75,19 @@ export async function request<T>(
   return (body as { data: T }).data
 }
 
-async function authorizationHeader(): Promise<string> {
+function authorizationHeader(): string {
   if (readAuthMode() === AUTH_MODE_AUTHENTICATED) {
-    return `Bearer ${await readUserAccessToken()}`
+    return `Bearer ${readUserAccessToken()}`
   }
   return `Bearer ${readEnv(ENV_TRELLIS_APP_API_SECRET)}`
 }
 
-// Dynamically import next/headers so anonymous-mode deployments (and
-// the SDK's own tests) don't pull in a Next.js dependency they never
-// use. In authenticated mode the SDK is, by construction, running
-// inside a Next.js server context, so the import resolves.
-async function readUserAccessToken(): Promise<string> {
-  const { cookies } = await import("next/headers.js")
-  const store = await cookies()
-  const raw = store.get(SESSION_COOKIE)?.value
+// Read the session cookie off the current request, which the Lambda
+// adapter has parked in AsyncLocalStorage. The auth middleware is
+// expected to redirect unauthenticated requests before they ever reach
+// user code that calls this; the 401 here is a guard against misuse.
+function readUserAccessToken(): string {
+  const raw = readCookie(currentRequest(), SESSION_COOKIE)
   const session = decodeCookie<SessionCookie>(raw)
   if (!isSessionLive(session)) {
     throw new TrellisAppApiError(

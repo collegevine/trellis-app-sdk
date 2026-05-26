@@ -55,3 +55,19 @@ export function isSessionLive(session: SessionCookie | null): boolean {
   if (!Number.isFinite(session.expiresAt)) return false
   return session.expiresAt * 1000 > Date.now()
 }
+
+// Pluck a single cookie value off a Request. Returns undefined when
+// the Cookie header is missing or the named cookie is not present.
+//
+// We split on `=` and rejoin the tail because JS's `String#split(sep,
+// limit)` truncates extras rather than putting the remainder into the
+// last element, which would silently corrupt any value containing `=`.
+export function readCookie(request: Request, name: string): string | undefined {
+  const header = request.headers.get("cookie")
+  if (!header) return undefined
+  for (const part of header.split(";")) {
+    const [k, ...v] = part.trim().split("=")
+    if (k === name) return v.join("=")
+  }
+  return undefined
+}
