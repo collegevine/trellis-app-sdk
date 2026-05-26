@@ -18,6 +18,10 @@
     "./auth/server": {
       "types": "./dist/auth/server.d.ts",
       "default": "./dist/auth/server.js"
+    },
+    "./lambda": {
+      "types": "./dist/lambda.d.ts",
+      "default": "./dist/lambda.js"
     }
   },
   "files": [
