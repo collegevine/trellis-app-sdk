@@ -14,6 +14,7 @@
 
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
+import { createRequestHandler } from "react-router"
 
 export type FetchHandler = (request: Request) => Promise<Response>
 
@@ -56,15 +57,8 @@ export const handler: LambdaHandler = async (event) => {
 async function loadFetchHandler(): Promise<FetchHandler> {
   const root = process.env.LAMBDA_TASK_ROOT ?? process.cwd()
   const buildUrl = pathToFileURL(resolve(root, RRV7_SERVER_BUILD_PATH)).href
-  // Imports are routed through a non-string-literal specifier so the SDK's
-  // typecheck doesn't require react-router to be installed. The dep ships with
-  // every RRv7 app at runtime.
-  const reactRouterSpecifier = "react-router"
-  const [reactRouter, build] = await Promise.all([
-    import(reactRouterSpecifier) as Promise<{createRequestHandler: (build: unknown) => FetchHandler}>,
-    import(buildUrl)
-  ])
-  return reactRouter.createRequestHandler(build)
+  const build = await import(buildUrl)
+  return createRequestHandler(build)
 }
 
 // Exported so tests can exercise the event translation without exercising
