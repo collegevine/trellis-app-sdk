@@ -48,9 +48,12 @@ const RRV7_SERVER_BUILD_PATH = "server/index.js"
 let cachedFetchHandler: Promise<FetchHandler> | null = null
 
 export const handler: LambdaHandler = async (event) => {
+  console.log(event)
   cachedFetchHandler ??= loadFetchHandler()
   const fetchHandler = await cachedFetchHandler
-  return runFetchHandler(fetchHandler, event)
+  const response = await runFetchHandler(fetchHandler, event)
+  console.log(response)
+  return response
 }
 
 async function loadFetchHandler(): Promise<FetchHandler> {
