@@ -15,6 +15,8 @@
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { createRequestHandler } from "react-router"
+import { withAuth } from "./auth/rrv7-middleware.js"
+import { runWithRequest } from "./context.js"
 
 export type FetchHandler = (request: Request) => Promise<Response>
 
@@ -58,7 +60,7 @@ async function loadFetchHandler(): Promise<FetchHandler> {
   const root = process.env.LAMBDA_TASK_ROOT ?? process.cwd()
   const buildUrl = pathToFileURL(resolve(root, RRV7_SERVER_BUILD_PATH)).href
   const build = await import(buildUrl)
-  return createRequestHandler(build)
+  return withAuth(createRequestHandler(build))
 }
 
 // Exported so tests can exercise the event translation without exercising
@@ -72,7 +74,7 @@ async function runFetchHandler(
   event: APIGatewayProxyEventV2
 ): Promise<APIGatewayProxyStructuredResultV2> {
   const request = lambdaEventToRequest(event)
-  const response = await fetchHandler(request)
+  const response = await runWithRequest(request, () => fetchHandler(request))
   return await responseToLambdaResult(response)
 }
 

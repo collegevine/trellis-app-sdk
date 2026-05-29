@@ -15,6 +15,10 @@
       "types": "./dist/auth/middleware.d.ts",
       "default": "./dist/auth/middleware.js"
     },
+    "./auth/rrv7-middleware": {
+      "types": "./dist/auth/rrv7-middleware.d.ts",
+      "default": "./dist/auth/rrv7-middleware.js"
+    },
     "./auth/server": {
       "types": "./dist/auth/server.d.ts",
       "default": "./dist/auth/server.js"
