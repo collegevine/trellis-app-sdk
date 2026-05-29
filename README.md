@@ -139,6 +139,32 @@ read-only on the Slate side. Deployments without an agent or whose
 product has no Slate credential receive `slate_not_configured` (HTTP
 422).
 
+### LLM inference
+
+Run a single LLM inference. The app supplies a free-form message array
+and gets back the completion text:
+
+```ts
+import { runLlmInference } from "@collegevine/trellis-app-sdk"
+
+const { text } = await runLlmInference([
+  { role: "system", content: "You are a helpful assistant." },
+  { role: "user", content: "Summarize the Treaty of Versailles in one sentence." }
+])
+
+console.log(text)
+```
+
+The model is chosen server-side; the app does not pick it. Each call is
+stateless, so pass the full conversation every time. Roles are
+`system`, `user`, or `assistant`. Token usage is metered to the school
+that owns the deployment.
+
+There is no per-app quota, but the combined message content is capped:
+oversized input returns `input_too_large` (HTTP 400), a malformed
+message array returns `invalid_messages` (HTTP 400), and the upstream
+provider's rate limit surfaces as `llm_rate_limited` (HTTP 429).
+
 ## Errors
 
 Any non-2xx response throws `TrellisAppApiError`:
