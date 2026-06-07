@@ -38,6 +38,16 @@ Authenticated-mode apps additionally get:
 |                             | with `app_id` already baked into the   |
 |                             | query string.                          |
 
+Database-enabled apps additionally get:
+
+| Variable       | Purpose                                            |
+| -------------- | -------------------------------------------------- |
+| `DATABASE_URL` | Passwordless connection string for the app's       |
+|                | private Postgres database, reached through the      |
+|                | Trellis RDS Proxy. The password is an IAM token the |
+|                | SDK mints per connection, so it is absent here.    |
+| `AWS_REGION`   | Set by the Lambda runtime; used to sign the token. |
+
 These are injected automatically into Vercel-deployed Trellis Apps;
 supply them yourself when running locally.
 
@@ -164,6 +174,32 @@ There is no per-app quota, but the combined message content is capped:
 oversized input returns `input_too_large` (HTTP 400), a malformed
 message array returns `invalid_messages` (HTTP 400), and the upstream
 provider's rate limit surfaces as `llm_rate_limited` (HTTP 429).
+
+### Database
+
+Apps deployed with a database get a private Postgres schema and a
+`DATABASE_URL`. `appDatabase()` returns a connection pool that
+authenticates to the RDS Proxy with a short-lived IAM token, minted
+fresh on every new connection — there is no static password anywhere.
+
+```ts
+import { appDatabase } from "@collegevine/trellis-app-sdk"
+
+const { rows } = await appDatabase().query(
+  "SELECT id, title FROM notes ORDER BY created_at DESC LIMIT 10"
+)
+```
+
+The pool is created lazily on first use and reused across invocations.
+Use it directly for queries, for transactions via
+`appDatabase().connect()`, or as the driver for an ORM (Drizzle,
+Kysely, and the like). The connection's `search_path` is pinned to the
+app's own schema, so unqualified table names resolve there; you create
+and migrate your own tables.
+
+Only database-enabled apps get a `DATABASE_URL`; calling
+`appDatabase()` without one throws. Request a database at deploy time
+with `database_enabled`.
 
 ## Errors
 
