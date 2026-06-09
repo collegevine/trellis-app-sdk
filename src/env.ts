@@ -5,8 +5,11 @@ export const ENV_AUTHORIZE_URL = "TRELLIS_APP_AUTHORIZE_URL"
 
 // Present only for database-enabled apps. DATABASE_URL is passwordless: the
 // password is a short-lived IAM token minted per connection. AWS_REGION is set
-// by the Lambda runtime and is needed to sign that token.
+// by the Lambda runtime and is needed to sign that token. DATABASE_SCHEMA is the
+// app's private schema, applied per connection via SET search_path because RDS
+// Proxy rejects the libpq `options` connection-string parameter.
 export const ENV_DATABASE_URL = "DATABASE_URL"
+export const ENV_DATABASE_SCHEMA = "DATABASE_SCHEMA"
 export const ENV_AWS_REGION = "AWS_REGION"
 
 export const AUTH_MODE_ANONYMOUS = "anonymous"
