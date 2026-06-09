@@ -13,3 +13,6 @@ export type { SlateQueryResult } from "./slate.js"
 
 export { runLlmInference } from "./llm.js"
 export type { LlmInferenceResult, LlmMessage, LlmRole } from "./llm.js"
+
+export { appDatabase } from "./db.js"
+export type { DbConnection } from "./db.js"
