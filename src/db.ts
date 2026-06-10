@@ -1,6 +1,11 @@
 import { Signer } from "@aws-sdk/rds-signer"
 import { Pool } from "pg"
-import { ENV_AWS_REGION, ENV_DATABASE_URL, readEnv } from "./env.js"
+import {
+  ENV_AWS_REGION,
+  ENV_DATABASE_SCHEMA,
+  ENV_DATABASE_URL,
+  readEnv
+} from "./env.js"
 
 const DEFAULT_PORT = 5432
 
@@ -9,7 +14,6 @@ export interface DbConnection {
   port: number
   user: string
   database: string
-  options?: string
   ssl: false | { rejectUnauthorized: boolean }
 }
 
@@ -24,7 +28,6 @@ export function parseDatabaseUrl(raw: string): DbConnection {
     port: url.port ? Number(url.port) : DEFAULT_PORT,
     user: decodeURIComponent(url.username),
     database: decodeURIComponent(url.pathname.replace(/^\//, "")),
-    options: url.searchParams.get("options") ?? undefined,
     // `sslmode=require` means encrypt without verifying the server certificate,
     // which is what Trellis injects: the proxy is only reachable over the
     // private VPC. `disable` is honored for local development against a plain
@@ -72,15 +75,27 @@ export function appDatabase(): Pool {
 function createPool(): Pool {
   const conn = parseDatabaseUrl(readEnv(ENV_DATABASE_URL))
   const region = readEnv(ENV_AWS_REGION)
-  return new Pool({
+  const schema = readEnv(ENV_DATABASE_SCHEMA).replace(/"/g, '""')
+  const pool = new Pool({
     host: conn.host,
     port: conn.port,
     user: conn.user,
     database: conn.database,
-    options: conn.options,
     ssl: conn.ssl,
     // pg calls this for each new physical connection, so every connection gets
     // a fresh, unexpired token.
     password: () => databaseAuthToken({ conn, region })
   })
+
+  // Pin every new physical connection to the app's private schema. RDS Proxy
+  // rejects the libpq `options=-c search_path=` startup parameter, so we issue
+  // SET instead. pg serializes queries per client, so this runs before any app
+  // query handed that connection.
+  pool.on("connect", (client) =>
+    client.query(`SET search_path TO "${schema}"`).catch((err: unknown) => {
+      console.error("Failed to set search_path on new connection", err)
+    })
+  )
+
+  return pool
 }
