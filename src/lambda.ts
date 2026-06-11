@@ -17,6 +17,7 @@ import { pathToFileURL } from "node:url"
 import { createRequestHandler } from "react-router"
 import { withAuth } from "./auth/rrv7-middleware.js"
 import { runWithRequest } from "./context.js"
+import { withStaticAssets } from "./static.js"
 
 export type FetchHandler = (request: Request) => Promise<Response>
 
@@ -48,6 +49,10 @@ export type LambdaHandler = (
 // Where RRv7 emits the server build inside the Lambda deployment package.
 const RRV7_SERVER_BUILD_PATH = "server/index.js"
 
+// Where the deploy pipeline puts the RRv7 client build (hashed asset
+// bundles, favicon) inside the Lambda deployment package.
+const RRV7_CLIENT_BUILD_DIR = "client"
+
 let cachedFetchHandler: Promise<FetchHandler> | null = null
 
 export const handler: LambdaHandler = async (event) => {
@@ -60,7 +65,10 @@ async function loadFetchHandler(): Promise<FetchHandler> {
   const root = process.env.LAMBDA_TASK_ROOT ?? process.cwd()
   const buildUrl = pathToFileURL(resolve(root, RRV7_SERVER_BUILD_PATH)).href
   const build = await import(buildUrl)
-  return withAuth(createRequestHandler(build))
+  return withStaticAssets(
+    resolve(root, RRV7_CLIENT_BUILD_DIR),
+    withAuth(createRequestHandler(build))
+  )
 }
 
 // Exported so tests can exercise the event translation without exercising
