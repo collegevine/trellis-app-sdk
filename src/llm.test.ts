@@ -38,7 +38,7 @@ describe("runLlmInference", () => {
     expect(init.method).toBe("POST")
     expect(init.headers.Authorization).toBe(`Bearer ${SECRET}`)
     expect(init.headers["Content-Type"]).toBe("application/json")
-    expect(JSON.parse(init.body as string)).toEqual({ messages: MESSAGES })
+    expect(JSON.parse(init.body as string)).toEqual({ messages: MESSAGES, upload_ids: [] })
   })
 
   it("throws TrellisAppApiError with status and parsed body on non-2xx", async () => {
@@ -53,6 +53,28 @@ describe("runLlmInference", () => {
       status: 429,
       body: { error: "llm_rate_limited" }
     })
+  })
+
+  it("sends upload_ids as a top-level field separate from messages", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { data: { text: "An X-wing." } }))
+
+    const messages: LlmMessage[] = [{ role: "user", content: "What ship is this?" }]
+    await runLlmInference(messages, ["abc-123", "def-456"])
+
+    const [, init] = fetchMock.mock.calls[0]!
+    expect(JSON.parse(init.body as string)).toEqual({
+      messages,
+      upload_ids: ["abc-123", "def-456"]
+    })
+  })
+
+  it("sends empty upload_ids when none are passed", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { data: { text: "ok" } }))
+
+    await runLlmInference(MESSAGES)
+
+    const [, init] = fetchMock.mock.calls[0]!
+    expect(JSON.parse(init.body as string)).toEqual({ messages: MESSAGES, upload_ids: [] })
   })
 
   it("throws if TRELLIS_APP_API_SECRET is missing", async () => {
