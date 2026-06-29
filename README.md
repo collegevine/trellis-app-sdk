@@ -175,6 +175,33 @@ oversized input returns `input_too_large` (HTTP 400), a malformed
 message array returns `invalid_messages` (HTTP 400), and the upstream
 provider's rate limit surfaces as `llm_rate_limited` (HTTP 429).
 
+### Files (images and PDFs)
+
+To send an image or PDF to the model, first upload the bytes with
+`uploadFile`, then pass the returned `upload_id` in the `uploadIds` argument
+to `runLlmInference`. Message `content` stays a plain string; uploads are a
+separate top-level list:
+
+```ts
+import { runLlmInference, uploadFile } from "@collegevine/trellis-app-sdk"
+
+const { upload_id } = await uploadFile(pdfBytes, "application/pdf", "Q3-report.pdf")
+
+const { text } = await runLlmInference(
+  [{ role: "user", content: "What does this report conclude?" }],
+  [upload_id]
+)
+```
+
+`uploadFile` takes the raw bytes (`Uint8Array`), a content type, and a
+filename. Only `image/jpeg`, `image/png`, `image/gif`, `image/webp`, and
+`application/pdf` are accepted; anything else returns
+`unsupported_file_type` (HTTP 400), and a file over the size cap returns
+`file_too_large` (HTTP 400). The filename is required, but may or may not be passed to the underlying LLM, depending on the model capabilities. Omitting the filename returns
+`invalid_file` (HTTP 400). Referencing an unknown or expired
+upload returns `upload_not_found` (HTTP 400), and an `uploadIds` value that
+is not a list of id strings returns `invalid_upload_ids` (HTTP 400).
+
 ### Database
 
 Apps deployed with a database get a private Postgres schema and a

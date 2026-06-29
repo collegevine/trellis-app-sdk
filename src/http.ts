@@ -61,6 +61,32 @@ export async function request<T>(
     headers,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined
   })
+  return unwrapResponse<T>(response)
+}
+
+// Calls the Trellis App API at `path` with a raw binary body (not JSON),
+// used for file uploads. Same auth, envelope unwrapping, and error handling
+// as `request`; the caller supplies the Content-Type.
+export async function requestRaw<T>(
+  path: string,
+  body: Uint8Array,
+  contentType: string
+): Promise<T> {
+  const baseUrl = readEnv(ENV_TRELLIS_APP_API_URL)
+
+  const response = await fetch(joinUrl(baseUrl, path), {
+    method: "POST",
+    headers: {
+      Authorization: authorizationHeader(),
+      Accept: "application/json",
+      "Content-Type": contentType
+    },
+    body
+  })
+  return unwrapResponse<T>(response)
+}
+
+async function unwrapResponse<T>(response: Response): Promise<T> {
   const text = await response.text()
 
   if (!response.ok) {
