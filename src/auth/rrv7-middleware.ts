@@ -151,9 +151,10 @@ import {
   encodeCookie,
   isSessionLive,
   readCookie,
+  userFromWire,
   type SessionCookie,
   type StateCookie,
-  type TrellisUser
+  type WireTrellisUser
 } from "./cookies.js"
 
 // Wrap an RRv7 request handler in the Trellis auth layer. The returned
@@ -304,7 +305,7 @@ async function exchangeCode(params: {
     data?: {
       access_token?: string
       expires_at?: string
-      user?: TrellisUser
+      user?: WireTrellisUser
     }
   }
   const data = body.data
@@ -320,7 +321,7 @@ async function exchangeCode(params: {
   return {
     accessToken: data.access_token,
     expiresAt: Math.floor(expiresAtMs / 1000),
-    user: data.user
+    user: userFromWire(data.user)
   }
 }
 

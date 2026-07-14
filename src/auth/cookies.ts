@@ -14,6 +14,25 @@ export const LOGOUT_PATH = "/api/trellis-auth/logout"
 
 export interface TrellisUser {
   name: string | null
+
+  // SHA-256 hex digests of the user's email addresses, each lowercased and
+  // stripped of surrounding whitespace before hashing. Stable public contract:
+  // an app can hash a known email the same way offline and compare against
+  // these. A platform user has one; a constituent may have several.
+  emailHashes: string[]
+}
+
+// The `user` object as it arrives from Rails' token endpoint: snake_case, to
+// match the sibling access_token / expires_at fields of that response. Mapped
+// to the camelCase TrellisUser at the SDK boundary by userFromWire, so the
+// public API stays camelCase and both middlewares decode it identically.
+export interface WireTrellisUser {
+  name: string | null
+  email_hashes?: string[]
+}
+
+export function userFromWire(wire: WireTrellisUser): TrellisUser {
+  return { name: wire.name ?? null, emailHashes: wire.email_hashes ?? [] }
 }
 
 // Stored in SESSION_COOKIE. The access token is the credential the

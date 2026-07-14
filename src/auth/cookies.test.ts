@@ -34,7 +34,7 @@ describe("isSessionLive", () => {
   const baseSession: SessionCookie = {
     accessToken: "tau_test",
     expiresAt: Math.floor(Date.now() / 1000) + 60,
-    user: { name: null }
+    user: { name: null, emailHashes: [] }
   }
 
   it("is false when given null", () => {
