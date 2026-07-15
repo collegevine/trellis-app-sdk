@@ -54,7 +54,7 @@ function liveSessionCookie(): string {
   const session: SessionCookie = {
     accessToken: "tau_use-the-force",
     expiresAt: Math.floor(Date.now() / 1000) + 3600,
-    user: { name: "Luke Skywalker" }
+    user: { name: "Luke Skywalker", emailHashes: [] }
   }
   return encodeCookie(session)
 }
@@ -179,7 +179,12 @@ describe("withAuth in authenticated mode", () => {
             data: {
               access_token: "tau_kessel-run",
               expires_at: tokenExpiresAt,
-              user: { name: "Han Solo" }
+              user: {
+                name: "Han Solo",
+                email_hashes: [
+                  "6d2f3c1e9a8b7c0d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d"
+                ]
+              }
             }
           }),
           { status: 200, headers: { "Content-Type": "application/json" } }
@@ -222,7 +227,14 @@ describe("withAuth in authenticated mode", () => {
       sessionCookieRaw.split(";")[0]!.split("=").slice(1).join("=")
     )!
     expect(sessionPayload.accessToken).toBe("tau_kessel-run")
-    expect(sessionPayload.user.name).toBe("Han Solo")
+    // The wire object is snake_case (email_hashes); the SDK maps it to the
+    // camelCase TrellisUser (emailHashes) at the boundary before storing it.
+    expect(sessionPayload.user).toEqual({
+      name: "Han Solo",
+      emailHashes: [
+        "6d2f3c1e9a8b7c0d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d"
+      ]
+    })
 
     const stateCleared = cookies.find((c) => c.startsWith(`${STATE_COOKIE}=`))!
     expect(stateCleared).toContain("Max-Age=0")
