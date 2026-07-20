@@ -12,6 +12,10 @@ export const LOGIN_PATH = "/api/trellis-auth/login"
 export const CALLBACK_PATH = "/api/trellis-auth/callback"
 export const LOGOUT_PATH = "/api/trellis-auth/logout"
 
+// Which kind of subject is signed in. A public wire contract shared with the
+// Rails `Trellis::Apps::SubjectType` module.
+export type SubjectType = "hq_user" | "school_user" | "constituent"
+
 export interface TrellisUser {
   name: string | null
 
@@ -20,6 +24,12 @@ export interface TrellisUser {
   // an app can hash a known email the same way offline and compare against
   // these. A platform user has one; a constituent may have several.
   emailHashes: string[]
+
+  // Whether the signed-in subject is an HQ user, a school user, or a
+  // constituent. Null on session cookies minted before this field existed: a
+  // browser can present an older cookie for the rest of its 14-day life after
+  // an app adopts this SDK version.
+  subjectType: SubjectType | null
 }
 
 // The `user` object as it arrives from Rails' token endpoint: snake_case, to
@@ -29,10 +39,15 @@ export interface TrellisUser {
 export interface WireTrellisUser {
   name: string | null
   email_hashes?: string[]
+  subject_type?: SubjectType | null
 }
 
 export function userFromWire(wire: WireTrellisUser): TrellisUser {
-  return { name: wire.name ?? null, emailHashes: wire.email_hashes ?? [] }
+  return {
+    name: wire.name ?? null,
+    emailHashes: wire.email_hashes ?? [],
+    subjectType: wire.subject_type ?? null
+  }
 }
 
 // Stored in SESSION_COOKIE. The access token is the credential the

@@ -8,6 +8,8 @@ import {
   type TrellisUser
 } from "./cookies.js"
 
+export type { SubjectType, TrellisUser } from "./cookies.js"
+
 // Returns the currently signed-in Trellis user, or null when no live
 // session is attached to the request. Server-only: must be called from
 // a loader, action, or other server-side code that runs inside a
@@ -25,8 +27,13 @@ export function getTrellisUser(): TrellisUser | null {
   const session = decodeCookie<SessionCookie>(raw)
   if (!isSessionLive(session)) return null
 
-  // Tolerate session cookies minted before emailHashes existed: after an app
-  // adopts this SDK a browser can still present an older cookie for the rest of
-  // its lifetime, and emailHashes is a non-optional part of the returned type.
-  return { ...session!.user, emailHashes: session!.user.emailHashes ?? [] }
+  // Tolerate session cookies minted before emailHashes / subjectType existed:
+  // after an app adopts this SDK a browser can still present an older cookie for
+  // the rest of its lifetime, and both are non-optional parts of the returned
+  // type.
+  return {
+    ...session!.user,
+    emailHashes: session!.user.emailHashes ?? [],
+    subjectType: session!.user.subjectType ?? null
+  }
 }

@@ -19,3 +19,6 @@ export type { UploadResult } from "./uploads.js"
 
 export { appDatabase } from "./db.js"
 export type { DbConnection } from "./db.js"
+
+export { getConstituentProperties } from "./constituent-properties.js"
+export type { ConstituentProperties } from "./constituent-properties.js"
