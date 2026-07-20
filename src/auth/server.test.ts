@@ -22,7 +22,8 @@ describe("getTrellisUser", () => {
         name: "Frodo Baggins",
         emailHashes: [
           "9ff3ef89857528ef80c5fa0faa27e4e5902d2d342d8fd9086c40d296fd49a709"
-        ]
+        ],
+        subjectType: "constituent"
       }
     }
     const user = runWithRequest(
@@ -33,12 +34,14 @@ describe("getTrellisUser", () => {
       name: "Frodo Baggins",
       emailHashes: [
         "9ff3ef89857528ef80c5fa0faa27e4e5902d2d342d8fd9086c40d296fd49a709"
-      ]
+      ],
+      subjectType: "constituent"
     })
   })
 
-  it("defaults emailHashes to [] for a legacy cookie minted before the field existed", () => {
-    // Old wire shape: a session cookie whose stored user has no emailHashes.
+  it("defaults emailHashes to [] and subjectType to null for a legacy cookie minted before the fields existed", () => {
+    // Old wire shape: a session cookie whose stored user has neither
+    // emailHashes nor subjectType.
     const legacy = {
       accessToken: "tau_old-session",
       expiresAt: Math.floor(Date.now() / 1000) + 3600,
@@ -48,7 +51,11 @@ describe("getTrellisUser", () => {
       requestWithCookie(encodeCookie(legacy)),
       () => getTrellisUser()
     )
-    expect(user).toEqual({ name: "Bilbo Baggins", emailHashes: [] })
+    expect(user).toEqual({
+      name: "Bilbo Baggins",
+      emailHashes: [],
+      subjectType: null
+    })
   })
 
   it("returns null when no cookie header is present", () => {
@@ -60,7 +67,7 @@ describe("getTrellisUser", () => {
     const session: SessionCookie = {
       accessToken: "tau_one-ring",
       expiresAt: Math.floor(Date.now() / 1000) - 1,
-      user: { name: "Gollum", emailHashes: [] }
+      user: { name: "Gollum", emailHashes: [], subjectType: null }
     }
     const user = runWithRequest(
       requestWithCookie(encodeCookie(session)),
