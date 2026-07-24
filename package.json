@@ -61,7 +61,7 @@
     "next": "^15.0.0",
     "react-router": "^7.0.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^3.2.6"
   },
   "dependencies": {
     "@aws-sdk/rds-signer": "^3.1063.0",
