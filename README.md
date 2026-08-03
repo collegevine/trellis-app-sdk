@@ -7,6 +7,13 @@ chosen at deploy time.
 This package is server-only. Credentials must never be exposed to the
 browser.
 
+## API reference
+
+The full API reference is generated from the source and published at
+<https://collegevine.github.io/trellis-app-sdk/>. It is the authoritative,
+always-current list of every function and type, with parameters, return
+values, thrown error codes, and examples.
+
 ## Install
 
 ```bash

@@ -10,18 +10,20 @@ import {
 
 export type { SubjectType, TrellisUser } from "./cookies.js"
 
-// Returns the currently signed-in Trellis user, or null when no live
-// session is attached to the request. Server-only: must be called from
-// a loader, action, or other server-side code that runs inside a
-// request scope established by the SDK's Lambda adapter. Decodes the
-// session cookie locally; does not round-trip to the API.
-//
-// The user carries `name` and `emailHashes`: SHA-256 hex digests of the
-// user's email addresses (each lowercased and whitespace-stripped before
-// hashing). Use the hashes as an opaque per-user identifier, or to
-// recognize "special" users by comparing against digests you computed the
-// same way at build time. A platform user has one; a constituent may have
-// several.
+/**
+ * Return the currently signed-in Trellis user, or `null` when no live session
+ * is attached to the request. Server-only: call it from a loader, action, or
+ * other server-side code that runs inside a request scope established by the
+ * SDK's Lambda adapter. Decodes the session cookie locally; does not round-trip
+ * to the API. Works whenever any sign-in switch is on, for HQ users, school
+ * users, and constituents alike.
+ *
+ * The user carries `emailHashes`: SHA-256 hex digests of the user's email
+ * addresses, each lowercased and whitespace-stripped before hashing. Use them as
+ * an opaque per-user identifier, or to recognize "special" users by comparing
+ * against digests you compute the same way at build time. A platform user has
+ * one; a constituent may have several. See {@link TrellisUser}.
+ */
 export function getTrellisUser(): TrellisUser | null {
   const raw = readCookie(currentRequest(), SESSION_COOKIE)
   const session = decodeCookie<SessionCookie>(raw)

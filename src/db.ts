@@ -9,6 +9,7 @@ import {
 
 const DEFAULT_PORT = 5432
 
+/** Connection settings parsed from the injected `DATABASE_URL`. */
 export interface DbConnection {
   host: string
   port: number
@@ -58,15 +59,30 @@ export function databaseAuthToken({
 
 let pool: Pool | undefined
 
-// The app's private Postgres database, reached through the Trellis RDS Proxy.
-// Returns a lazily-created, process-wide connection pool that authenticates
-// with a fresh IAM token on every new connection, so it survives the ~15-minute
-// token lifetime and is reused across Lambda invocations on warm starts. Use it
-// directly for queries (`await appDatabase().query(...)`), for transactions
-// (`appDatabase().connect()`), or as the driver for an ORM.
-//
-// Only available to apps deployed with a database; otherwise the first call
-// throws because DATABASE_URL is unset.
+/**
+ * The app's private Postgres database, reached through the Trellis RDS Proxy.
+ * Server-only.
+ *
+ * Returns a lazily-created, process-wide connection pool that authenticates
+ * with a fresh IAM token on every new connection, so it survives the ~15-minute
+ * token lifetime and is reused across Lambda invocations on warm starts. Use it
+ * directly for queries (`await appDatabase().query(...)`), for transactions
+ * (`appDatabase().connect()`), or as the driver for an ORM. The connection's
+ * `search_path` is pinned to the app's private schema, so unqualified table
+ * names resolve there and stay isolated from other apps in the school.
+ *
+ * Only available to apps deployed with `database_enabled`; otherwise the first
+ * call throws because `DATABASE_URL` is unset. Declare the schema in a
+ * `structure.sql` file at the package root; the deploy pipeline reconciles it
+ * before the app serves its first request.
+ *
+ * @example
+ * ```ts
+ * const { rows } = await appDatabase().query(
+ *   "SELECT id, title FROM notes ORDER BY created_at DESC LIMIT 50"
+ * )
+ * ```
+ */
 export function appDatabase(): Pool {
   pool ??= createPool()
   return pool

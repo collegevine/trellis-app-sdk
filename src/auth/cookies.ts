@@ -12,23 +12,28 @@ export const LOGIN_PATH = "/api/trellis-auth/login"
 export const CALLBACK_PATH = "/api/trellis-auth/callback"
 export const LOGOUT_PATH = "/api/trellis-auth/logout"
 
-// Which kind of subject is signed in. A public wire contract shared with the
-// Rails `Trellis::Apps::SubjectType` module.
+/** Which kind of subject is signed in. */
 export type SubjectType = "hq_user" | "school_user" | "constituent"
 
+/** The signed-in user, as returned by {@link getTrellisUser}. */
 export interface TrellisUser {
+  /** The user's display name, or `null` when unknown. */
   name: string | null
 
-  // SHA-256 hex digests of the user's email addresses, each lowercased and
-  // stripped of surrounding whitespace before hashing. Stable public contract:
-  // an app can hash a known email the same way offline and compare against
-  // these. A platform user has one; a constituent may have several.
+  /**
+   * SHA-256 hex digests of the user's email addresses, each lowercased and
+   * stripped of surrounding whitespace before hashing. Stable public contract:
+   * an app can hash a known email the same way offline and compare against
+   * these. A platform user has one; a constituent may have several.
+   */
   emailHashes: string[]
 
-  // Whether the signed-in subject is an HQ user, a school user, or a
-  // constituent. Null on session cookies minted before this field existed: a
-  // browser can present an older cookie for the rest of its 14-day life after
-  // an app adopts this SDK version.
+  /**
+   * Whether the signed-in subject is an HQ user, a school user, or a
+   * constituent. `null` on session cookies minted before this field existed: a
+   * browser can present an older cookie for the rest of its 14-day life after
+   * an app adopts this SDK version.
+   */
   subjectType: SubjectType | null
 }
 
