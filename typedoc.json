@@ -1,0 +1,13 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "plugin": ["typedoc-plugin-markdown"],
+  "entryPoints": ["src/index.ts", "src/auth/server.ts"],
+  "out": "docs",
+  "readme": "none",
+  "excludeExternals": true,
+  "githubPages": false,
+  "outputFileStrategy": "modules",
+  "useCodeBlocks": true,
+  "hideBreadcrumbs": true,
+  "hidePageHeader": true
+}

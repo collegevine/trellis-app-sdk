@@ -14,8 +14,16 @@ import {
 } from "./auth/cookies.js"
 import { currentRequest } from "./context.js"
 
+/**
+ * Thrown by every SDK call on any non-2xx response (or when a 2xx body is not
+ * valid JSON). Inspect `status` and `body` to branch on the specific failure;
+ * `body` is the parsed error payload, typically `{ error: "<code>" }`, whose
+ * codes are documented per function.
+ */
 export class TrellisAppApiError extends Error {
+  /** HTTP status code of the failed response. */
   readonly status: number
+  /** Parsed response body, typically `{ error: "<code>" }`. */
   readonly body: unknown
 
   constructor(message: string, status: number, body: unknown) {
