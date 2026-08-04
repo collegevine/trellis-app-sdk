@@ -46,7 +46,7 @@
   },
   "peerDependencies": {
     "next": "^15.0.0",
-    "react-router": "^7.0.0"
+    "react-router": "^8.3.0"
   },
   "peerDependenciesMeta": {
     "next": {
@@ -60,7 +60,7 @@
     "@types/node": "^24.0.0",
     "@types/pg": "^8.20.0",
     "next": "^15.0.0",
-    "react-router": "^7.0.0",
+    "react-router": "^8.3.0",
     "typedoc": "^0.28.20",
     "typedoc-plugin-markdown": "^4.12.0",
     "typescript": "^5.6.0",
