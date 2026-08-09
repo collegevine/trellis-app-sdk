@@ -22,3 +22,6 @@ export type { DbConnection } from "./db.js"
 
 export { getConstituentProperties } from "./constituent-properties.js"
 export type { ConstituentProperties } from "./constituent-properties.js"
+
+export { Logger } from "./logging.js"
+export type { AppLogLine, LogLevel } from "./logging.js"
