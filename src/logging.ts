@@ -8,6 +8,12 @@
 // console wrapper, which would otherwise fold a timestamp and request id in
 // front of the payload and leave the line no longer parseable as pure JSON.
 // We will add richer stuff (request ID, etc.) later.
+//
+// Emission is gated on a configured minimum level (TRELLIS_APP_LOG_LEVEL): a
+// line is written only when its level is at or above the threshold, so the
+// platform can dial verbosity up or down without an app redeploy.
+
+import { ENV_LOG_LEVEL } from "./env.js"
 
 type LogMethod = "debug" | "log" | "info" | "warn" | "error"
 
@@ -32,6 +38,18 @@ const CONSOLE_METHODS = Object.keys(LEVEL_BY_CONSOLE_METHOD) as LogMethod[]
 // log group, so this only matters for local runs and anything reading the
 // streams apart.
 const STDERR_LEVELS: ReadonlySet<LogLevel> = new Set(["warn", "error"])
+
+// Ascending severity. A line is emitted only when its level ranks at or above
+// the configured threshold.
+const LEVEL_SEVERITY: Record<LogLevel, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3
+}
+
+// Applied when TRELLIS_APP_LOG_LEVEL is unset or not one of the levels above.
+const DEFAULT_LOG_LEVEL: LogLevel = "info"
 
 /**
  * The JSON shape of a single log line emitted by {@link Logger}.
@@ -93,6 +111,11 @@ export interface Logger {
  * ```ts
  * import { Logger } from "@collegevine/trellis-app-sdk"
  * ```
+ *
+ * Emission is gated by the app's configured log level, which the platform sets:
+ * a line is emitted only when its level is at or above the threshold, and by
+ * default only `info` and above are emitted. A `debug` line may therefore not
+ * appear until the level is lowered.
  *
  * A leading string argument becomes the line's `message`, and anything after it
  * becomes `params`:
@@ -164,6 +187,8 @@ export function installJsonLogging(): () => void {
 }
 
 function emit(level: LogLevel, args: unknown[]): void {
+  if (LEVEL_SEVERITY[level] < LEVEL_SEVERITY[configuredLevel()]) return
+
   const stream = STDERR_LEVELS.has(level) ? process.stderr : process.stdout
   const entry = {
     level,
@@ -172,6 +197,16 @@ function emit(level: LogLevel, args: unknown[]): void {
   }
   stream.write(serialize(entry) + "\n")
 }
+
+function configuredLevel(): LogLevel {
+  const value = process.env[ENV_LOG_LEVEL]
+
+  const isLogLevel = (value: string | undefined): value is LogLevel =>
+    value != null && Object.hasOwn(LEVEL_SEVERITY, value)
+
+  return isLogLevel(value) ? value : DEFAULT_LOG_LEVEL
+}
+
 
 // Shapes of `args`, in order:
 //

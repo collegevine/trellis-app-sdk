@@ -2,6 +2,7 @@ export const ENV_TRELLIS_APP_API_URL = "TRELLIS_APP_API_URL"
 export const ENV_TRELLIS_APP_API_SECRET = "TRELLIS_APP_API_SECRET"
 export const ENV_AUTH_MODE = "TRELLIS_APP_AUTH_MODE"
 export const ENV_AUTHORIZE_URL = "TRELLIS_APP_AUTHORIZE_URL"
+export const ENV_LOG_LEVEL = "TRELLIS_APP_LOG_LEVEL"
 
 // Present only for database-enabled apps. DATABASE_URL is passwordless: the
 // password is a short-lived IAM token minted per connection. AWS_REGION is set
