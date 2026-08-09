@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { ENV_LOG_LEVEL } from "./env.js"
+import { runWithRequest } from "./context.js"
+import { ENV_DEPLOYMENT_ID, ENV_LOG_LEVEL } from "./env.js"
 import { installJsonLogging, Logger } from "./logging.js"
 
 describe("logging", () => {
@@ -9,25 +10,34 @@ describe("logging", () => {
   const captureInto = (sink: Record<string, unknown>[]) => (chunk: unknown) => {
     const line = String(chunk)
     expect(line.endsWith("\n")).toBe(true)
-    sink.push(JSON.parse(line))
+    const entry = JSON.parse(line)
+    expect(entry.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/)
+    delete entry.timestamp
+    sink.push(entry)
     return true
   }
 
+  const restoreEnv = (name: string, original: string | undefined) => {
+    if (original === undefined) delete process.env[name]
+    else process.env[name] = original
+  }
+
   const originalLogLevel = process.env[ENV_LOG_LEVEL]
+  const originalDeploymentId = process.env[ENV_DEPLOYMENT_ID]
 
   beforeEach(() => {
     stdout = []
     stderr = []
-    // Emit at every level by default; the filtering suite overrides this.
     process.env[ENV_LOG_LEVEL] = "debug"
+    delete process.env[ENV_DEPLOYMENT_ID]
     vi.spyOn(process.stdout, "write").mockImplementation(captureInto(stdout))
     vi.spyOn(process.stderr, "write").mockImplementation(captureInto(stderr))
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
-    if (originalLogLevel === undefined) delete process.env[ENV_LOG_LEVEL]
-    else process.env[ENV_LOG_LEVEL] = originalLogLevel
+    restoreEnv(ENV_LOG_LEVEL, originalLogLevel)
+    restoreEnv(ENV_DEPLOYMENT_ID, originalDeploymentId)
   })
 
   describe("installJsonLogging", () => {
@@ -201,6 +211,38 @@ describe("logging", () => {
         expect(stdout.map((entry) => entry.level)).toEqual(["info"])
         expect(stderr).toEqual([])
       }
+    })
+  })
+
+  describe("enrichment", () => {
+    it("stamps the configured deployment id onto every line", () => {
+      process.env[ENV_DEPLOYMENT_ID] = "deploy-88"
+
+      Logger.info("liftoff")
+
+      expect(stdout[0]).toEqual({
+        level: "info",
+        deploymentId: "deploy-88",
+        message: "liftoff"
+      })
+    })
+
+    it("stamps the request id within a request scope, and omits it outside one", () => {
+      Logger.info("no scope")
+      runWithRequest(
+        {
+          request: new Request("https://endor.apps.collegevine.ai/"),
+          requestId: "req-77"
+        },
+        () => Logger.info("in scope")
+      )
+
+      expect(stdout[0]).toEqual({ level: "info", message: "no scope" })
+      expect(stdout[1]).toEqual({
+        level: "info",
+        requestId: "req-77",
+        message: "in scope"
+      })
     })
   })
 })

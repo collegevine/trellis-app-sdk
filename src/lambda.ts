@@ -43,8 +43,15 @@ export interface APIGatewayProxyStructuredResultV2 {
   isBase64Encoded: boolean
 }
 
+// The fields of the AWS Lambda context we use. awsRequestId uniquely
+// identifies the invocation and is stamped onto every log line it emits.
+export interface LambdaContext {
+  awsRequestId: string
+}
+
 export type LambdaHandler = (
-  event: APIGatewayProxyEventV2
+  event: APIGatewayProxyEventV2,
+  context: LambdaContext
 ) => Promise<APIGatewayProxyStructuredResultV2>
 
 // Where RRv7 emits the server build inside the Lambda deployment package.
@@ -56,10 +63,10 @@ const RRV7_CLIENT_BUILD_DIR = "client"
 
 let cachedFetchHandler: Promise<FetchHandler> | null = null
 
-export const handler: LambdaHandler = async (event) => {
+export const handler: LambdaHandler = async (event, context) => {
   cachedFetchHandler ??= loadFetchHandler()
   const fetchHandler = await cachedFetchHandler
-  return runFetchHandler(fetchHandler, event)
+  return runFetchHandler(fetchHandler, event, context.awsRequestId)
 }
 
 async function loadFetchHandler(): Promise<FetchHandler> {
@@ -79,15 +86,19 @@ async function loadFetchHandler(): Promise<FetchHandler> {
 // Exported so tests can exercise the event translation without exercising
 // the dynamic build load.
 export function createLambdaHandler(fetchHandler: FetchHandler): LambdaHandler {
-  return (event) => runFetchHandler(fetchHandler, event)
+  return (event, context) =>
+    runFetchHandler(fetchHandler, event, context.awsRequestId)
 }
 
 async function runFetchHandler(
   fetchHandler: FetchHandler,
-  event: APIGatewayProxyEventV2
+  event: APIGatewayProxyEventV2,
+  requestId: string
 ): Promise<APIGatewayProxyStructuredResultV2> {
   const request = lambdaEventToRequest(event)
-  const response = await runWithRequest(request, () => fetchHandler(request))
+  const response = await runWithRequest({ request, requestId }, () =>
+    fetchHandler(request)
+  )
   return await responseToLambdaResult(response)
 }
 

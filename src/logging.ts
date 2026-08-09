@@ -7,13 +7,17 @@
 // Lines go straight to the streams rather than through the Lambda runtime's own
 // console wrapper, which would otherwise fold a timestamp and request id in
 // front of the payload and leave the line no longer parseable as pure JSON.
-// We will add richer stuff (request ID, etc.) later.
+// Instead we stamp those on ourselves as structured fields: every line carries
+// an emit timestamp, the AWS request id of the invocation serving it (when
+// emitted within a request), and the deployment id the app was built from
+// (TRELLIS_APP_DEPLOYMENT_ID).
 //
 // Emission is gated on a configured minimum level (TRELLIS_APP_LOG_LEVEL): a
 // line is written only when its level is at or above the threshold, so the
 // platform can dial verbosity up or down without an app redeploy.
 
-import { ENV_LOG_LEVEL } from "./env.js"
+import { currentRequestId } from "./context.js"
+import { ENV_DEPLOYMENT_ID, ENV_LOG_LEVEL } from "./env.js"
 
 type LogMethod = "debug" | "log" | "info" | "warn" | "error"
 
@@ -62,10 +66,24 @@ const DEFAULT_LOG_LEVEL: LogLevel = "info"
  * See {@link Logger} for how call arguments map onto `message` and `params`.
  */
 export interface AppLogLine {
+  /** ISO 8601 instant the line was emitted. */
+  timestamp: string
+
   /** Severity: the {@link Logger} method that emitted the line. */
   level: LogLevel
+
+  /**
+   * The AWS request id of the invocation that emitted the line. Omitted for
+   * lines emitted outside a request, such as at cold start.
+   */
+  requestId?: string
+
+  /** The id of the app deployment that emits the log. */
+  deploymentId?: string
+
   /** The first argument when it is a string; omitted otherwise. */
   message?: string
+
   /**
    * The line's structured payload: the arguments not captured by `message` — the
    * trailing arguments when the first is a string, or every argument when the
@@ -73,6 +91,7 @@ export interface AppLogLine {
    * spliced onto the line instead (see the index signature below).
    */
   params?: Record<string, unknown> | unknown[]
+
   /**
    * A lone hash argument — or a string message followed by a lone hash — is
    * spliced onto the line as its own top-level fields rather than nested under
@@ -116,6 +135,11 @@ export interface Logger {
  * a line is emitted only when its level is at or above the threshold, and by
  * default only `info` and above are emitted. A `debug` line may therefore not
  * appear until the level is lowered.
+ *
+ * Every emitted line also carries platform-stamped fields — a `timestamp`, the
+ * `requestId` of the serving invocation, and the `deploymentId` the app was
+ * built from (see {@link AppLogLine}). The examples below omit these to keep the
+ * focus on how call arguments map onto `message` and `params`.
  *
  * A leading string argument becomes the line's `message`, and anything after it
  * becomes `params`:
@@ -191,11 +215,21 @@ function emit(level: LogLevel, args: unknown[]): void {
 
   const stream = STDERR_LEVELS.has(level) ? process.stderr : process.stdout
   const entry = {
+    timestamp: new Date().toISOString(),
     level,
-    // More built-in args will be here. ALL-4192
+    ...provenance(),
     ...logEntry(args)
   }
   stream.write(serialize(entry) + "\n")
+}
+
+function provenance(): Record<string, string> {
+  const requestId = currentRequestId()
+  const deploymentId = process.env[ENV_DEPLOYMENT_ID]
+  return {
+    ...(requestId ? { requestId } : {}),
+    ...(deploymentId ? { deploymentId } : {})
+  }
 }
 
 function configuredLevel(): LogLevel {
@@ -248,6 +282,7 @@ function serialize(entry: Record<string, unknown>): string {
     return JSON.stringify(entry, circularSafeReplacer())
   } catch {
     return JSON.stringify({
+      timestamp: entry.timestamp,
       level: entry.level,
       message: entry.message,
       params: ["[unserializable log arguments]"]

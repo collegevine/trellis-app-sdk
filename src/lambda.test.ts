@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest"
+import { currentRequestId } from "./context.js"
 import {
   createLambdaHandler,
   type APIGatewayProxyEventV2,
-  type FetchHandler
+  type FetchHandler,
+  type LambdaContext
 } from "./lambda.js"
 
 const baseEvent = (
@@ -18,6 +20,10 @@ const baseEvent = (
   ...overrides
 })
 
+const baseContext = (
+  overrides: Partial<LambdaContext> = {}
+): LambdaContext => ({ awsRequestId: "req-test", ...overrides })
+
 describe("createLambdaHandler", () => {
   it("translates path, query, method, and host into a Fetch Request", async () => {
     const seen = vi.fn<FetchHandler>(async () => new Response("ok"))
@@ -31,7 +37,8 @@ describe("createLambdaHandler", () => {
           domainName: "dispatcher.example.com",
           http: { method: "GET" }
         }
-      })
+      }),
+      baseContext()
     )
 
     const request = seen.mock.calls[0]![0]
@@ -52,7 +59,8 @@ describe("createLambdaHandler", () => {
           domainName: "dispatcher.example.com",
           http: { method: "GET" }
         }
-      })
+      }),
+      baseContext()
     )
 
     expect(seen.mock.calls[0]![0].url).toBe("https://dispatcher.example.com/")
@@ -65,7 +73,8 @@ describe("createLambdaHandler", () => {
     await handler(
       baseEvent({
         cookies: ["session=force-is-strong", "theme=tatooine"]
-      })
+      }),
+      baseContext()
     )
 
     expect(seen.mock.calls[0]![0].headers.get("cookie")).toBe(
@@ -86,7 +95,8 @@ describe("createLambdaHandler", () => {
           domainName: "dispatcher.example.com",
           http: { method: "POST" }
         }
-      })
+      }),
+      baseContext()
     )
 
     const text = await seen.mock.calls[0]![0].text()
@@ -105,7 +115,8 @@ describe("createLambdaHandler", () => {
           domainName: "dispatcher.example.com",
           http: { method: "GET" }
         }
-      })
+      }),
+      baseContext()
     )
 
     const text = await seen.mock.calls[0]![0].text()
@@ -123,7 +134,7 @@ describe("createLambdaHandler", () => {
       })
     }
 
-    const result = await createLambdaHandler(fetchHandler)(baseEvent())
+    const result = await createLambdaHandler(fetchHandler)(baseEvent(), baseContext())
 
     expect(result.statusCode).toBe(201)
     expect(result.headers["content-type"]).toBe("image/png")
@@ -142,9 +153,24 @@ describe("createLambdaHandler", () => {
         headers: { "content-type": "text/html; charset=utf-8" }
       })
 
-    const result = await createLambdaHandler(fetchHandler)(baseEvent())
+    const result = await createLambdaHandler(fetchHandler)(baseEvent(), baseContext())
 
     expect(result.isBase64Encoded).toBe(false)
     expect(result.body).toBe("<h1>Hello, Naboo</h1>")
+  })
+
+  it("runs the handler within a request scope carrying the Lambda request id", async () => {
+    let seen: string | undefined
+    const fetchHandler: FetchHandler = async () => {
+      seen = currentRequestId()
+      return new Response("ok")
+    }
+
+    await createLambdaHandler(fetchHandler)(
+      baseEvent(),
+      baseContext({ awsRequestId: "req-4193" })
+    )
+
+    expect(seen).toBe("req-4193")
   })
 })
