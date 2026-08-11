@@ -38,7 +38,7 @@ describe("request logging", () => {
       {
         headers: {
           cookie: signedInCookie(leia),
-          "x-trellis-client-ip": "203.0.113.7"
+          "x-forwarded-client-ip": "203.0.113.7"
         }
       }
     )

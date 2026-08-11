@@ -198,7 +198,7 @@ describe("createLambdaHandler", () => {
         rawQueryString: "tab=orders",
         headers: {
           host: "x-wing.dagobah.apps.collegevine.ai",
-          "x-trellis-client-ip": "203.0.113.7"
+          "x-forwarded-client-ip": "203.0.113.7"
         }
       }),
       baseContext({ awsRequestId: "req-4194" })

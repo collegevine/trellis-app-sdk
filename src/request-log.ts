@@ -3,7 +3,7 @@ import { Logger } from "./logging.js"
 
 // The edge function in CloudFront stamps this header onto every request,
 // carrying client IP address.
-const CLIENT_IP_HEADER = "x-trellis-client-ip"
+const CLIENT_IP_HEADER = "x-forwarded-client-ip"
 
 export function logRequestStart(request: Request): void {
   const url = new URL(request.url)
