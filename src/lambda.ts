@@ -18,6 +18,7 @@ import { createRequestHandler } from "react-router"
 import { withAuth } from "./auth/rrv7-middleware.js"
 import { runWithRequest } from "./context.js"
 import { installJsonLogging } from "./logging.js"
+import { logRequestEnd, logRequestStart } from "./request-log.js"
 import { withStaticAssets } from "./static.js"
 
 export type FetchHandler = (request: Request) => Promise<Response>
@@ -96,9 +97,13 @@ async function runFetchHandler(
   requestId: string
 ): Promise<APIGatewayProxyStructuredResultV2> {
   const request = lambdaEventToRequest(event)
-  const response = await runWithRequest({ request, requestId }, () =>
-    fetchHandler(request)
-  )
+  const response = await runWithRequest({ request, requestId }, async () => {
+    const startedAt = Date.now()
+    logRequestStart(request)
+    const result = await fetchHandler(request)
+    logRequestEnd({ request, status: result.status, durationMs: Date.now() - startedAt })
+    return result
+  })
   return await responseToLambdaResult(response)
 }
 

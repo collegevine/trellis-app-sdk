@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { currentRequestId } from "./context.js"
 import {
   createLambdaHandler,
@@ -6,6 +6,7 @@ import {
   type FetchHandler,
   type LambdaContext
 } from "./lambda.js"
+import { Logger } from "./logging.js"
 
 const baseEvent = (
   overrides: Partial<APIGatewayProxyEventV2> = {}
@@ -25,6 +26,19 @@ const baseContext = (
 ): LambdaContext => ({ awsRequestId: "req-test", ...overrides })
 
 describe("createLambdaHandler", () => {
+  let logged: unknown[][]
+
+  // Capture the request start/end lines the adapter logs via Logger, keeping
+  // them out of the test output.
+  beforeEach(() => {
+    logged = []
+    vi.spyOn(Logger, "info").mockImplementation((...args: unknown[]) => {
+      logged.push(args)
+    })
+  })
+
+  afterEach(() => vi.restoreAllMocks())
+
   it("translates path, query, method, and host into a Fetch Request", async () => {
     const seen = vi.fn<FetchHandler>(async () => new Response("ok"))
     const handler = createLambdaHandler(seen)
@@ -172,5 +186,31 @@ describe("createLambdaHandler", () => {
     )
 
     expect(seen).toBe("req-4193")
+  })
+
+  it("emits a request start and request end line around the handler", async () => {
+    const fetchHandler: FetchHandler = async () =>
+      new Response("ok", { status: 207 })
+
+    await createLambdaHandler(fetchHandler)(
+      baseEvent({
+        rawPath: "/dashboard",
+        rawQueryString: "tab=orders",
+        headers: {
+          host: "x-wing.dagobah.apps.collegevine.ai",
+          "x-trellis-client-ip": "203.0.113.7"
+        }
+      }),
+      baseContext({ awsRequestId: "req-4194" })
+    )
+
+    const [start, end] = logged
+    expect(start).toEqual([
+      "request start",
+      { path: "/dashboard", query: "tab=orders", clientIp: "203.0.113.7" }
+    ])
+    expect(end![0]).toBe("request end")
+    expect(end![1]).toMatchObject({ path: "/dashboard", status: 207 })
+    expect(typeof (end![1] as Record<string, unknown>).durationMs).toBe("number")
   })
 })
