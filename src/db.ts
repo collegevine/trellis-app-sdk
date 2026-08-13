@@ -1,11 +1,6 @@
 import { Signer } from "@aws-sdk/rds-signer"
 import { Pool } from "pg"
-import {
-  ENV_AWS_REGION,
-  ENV_DATABASE_SCHEMA,
-  ENV_DATABASE_URL,
-  readEnv
-} from "./env.js"
+import { ENV_AWS_REGION, ENV_DATABASE_URL, readEnv } from "./env.js"
 
 const DEFAULT_PORT = 5432
 
@@ -67,9 +62,10 @@ let pool: Pool | undefined
  * with a fresh IAM token on every new connection, so it survives the ~15-minute
  * token lifetime and is reused across Lambda invocations on warm starts. Use it
  * directly for queries (`await appDatabase().query(...)`), for transactions
- * (`appDatabase().connect()`), or as the driver for an ORM. The connection's
- * `search_path` is pinned to the app's private schema, so unqualified table
- * names resolve there and stay isolated from other apps in the school.
+ * (`appDatabase().connect()`), or as the driver for an ORM. The connection
+ * authenticates as the app's own Postgres role, whose default `search_path`
+ * resolves to the like-named private schema, so unqualified table names land
+ * there and stay isolated from other apps in the school.
  *
  * Only available to apps deployed with `database_enabled`; otherwise the first
  * call throws because `DATABASE_URL` is unset. Declare the schema in a
@@ -91,8 +87,7 @@ export function appDatabase(): Pool {
 function createPool(): Pool {
   const conn = parseDatabaseUrl(readEnv(ENV_DATABASE_URL))
   const region = readEnv(ENV_AWS_REGION)
-  const schema = readEnv(ENV_DATABASE_SCHEMA).replace(/"/g, '""')
-  const pool = new Pool({
+  return new Pool({
     host: conn.host,
     port: conn.port,
     user: conn.user,
@@ -102,16 +97,4 @@ function createPool(): Pool {
     // a fresh, unexpired token.
     password: () => databaseAuthToken({ conn, region })
   })
-
-  // Pin every new physical connection to the app's private schema. RDS Proxy
-  // rejects the libpq `options=-c search_path=` startup parameter, so we issue
-  // SET instead. pg serializes queries per client, so this runs before any app
-  // query handed that connection.
-  pool.on("connect", (client) =>
-    client.query(`SET search_path TO "${schema}"`).catch((err: unknown) => {
-      console.error("Failed to set search_path on new connection", err)
-    })
-  )
-
-  return pool
 }

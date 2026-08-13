@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const { getAuthToken, SignerMock, PoolMock } = vi.hoisted(() => ({
   getAuthToken: vi.fn(),
@@ -17,15 +17,13 @@ beforeEach(() => {
   vi.resetModules()
   getAuthToken.mockReset()
   SignerMock.mockReset().mockImplementation(() => ({ getAuthToken }))
-  PoolMock.mockReset().mockImplementation(() => ({ pool: true, on: vi.fn() }))
+  PoolMock.mockReset().mockImplementation(() => ({ pool: true }))
   delete process.env.DATABASE_URL
-  delete process.env.DATABASE_SCHEMA
   delete process.env.AWS_REGION
 })
 
 afterEach(() => {
   delete process.env.DATABASE_URL
-  delete process.env.DATABASE_SCHEMA
   delete process.env.AWS_REGION
 })
 
@@ -97,23 +95,13 @@ describe("appDatabase", () => {
 
   it("throws when AWS_REGION is missing", async () => {
     process.env.DATABASE_URL = DATABASE_URL
-    process.env.DATABASE_SCHEMA = "app_abc"
     const { appDatabase } = await loadDb()
 
     expect(() => appDatabase()).toThrow(/AWS_REGION/)
   })
 
-  it("throws when DATABASE_SCHEMA is missing", async () => {
-    process.env.DATABASE_URL = DATABASE_URL
-    process.env.AWS_REGION = "us-east-1"
-    const { appDatabase } = await loadDb()
-
-    expect(() => appDatabase()).toThrow(/DATABASE_SCHEMA/)
-  })
-
   it("creates the pool once and reuses it across calls", async () => {
     process.env.DATABASE_URL = DATABASE_URL
-    process.env.DATABASE_SCHEMA = "app_abc"
     process.env.AWS_REGION = "us-east-1"
     const { appDatabase } = await loadDb()
 
@@ -123,7 +111,6 @@ describe("appDatabase", () => {
 
   it("builds the pool from the URL and authenticates each connection with a fresh IAM token", async () => {
     process.env.DATABASE_URL = DATABASE_URL
-    process.env.DATABASE_SCHEMA = "app_abc"
     process.env.AWS_REGION = "us-east-1"
     getAuthToken.mockResolvedValue("iam-token-xyz")
     const { appDatabase } = await loadDb()
@@ -138,9 +125,6 @@ describe("appDatabase", () => {
       database: "school_test_shire",
       ssl: { rejectUnauthorized: false }
     })
-    // The schema is no longer carried in the pg config; it is applied per
-    // connection (see the SET search_path test below).
-    expect(config).not.toHaveProperty("options")
 
     // pg invokes `password` per new connection; it must yield a fresh token.
     await expect(config.password()).resolves.toBe("iam-token-xyz")
@@ -150,21 +134,5 @@ describe("appDatabase", () => {
       username: "school_test_shire",
       region: "us-east-1"
     })
-  })
-
-  it("pins the schema with SET search_path on every new connection", async () => {
-    process.env.DATABASE_URL = DATABASE_URL
-    process.env.DATABASE_SCHEMA = "app_abc"
-    process.env.AWS_REGION = "us-east-1"
-    const { appDatabase } = await loadDb()
-
-    const instance = appDatabase() as unknown as { on: Mock }
-    expect(instance.on).toHaveBeenCalledWith("connect", expect.any(Function))
-
-    const onConnect = instance.on.mock.calls[0]![1] as (client: unknown) => void
-    const query = vi.fn().mockResolvedValue(undefined)
-    onConnect({ query })
-
-    expect(query).toHaveBeenCalledWith('SET search_path TO "app_abc"')
   })
 })
