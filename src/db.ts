@@ -1,6 +1,7 @@
 import { Signer } from "@aws-sdk/rds-signer"
 import { Pool } from "pg"
 import { ENV_AWS_REGION, ENV_DATABASE_URL, readEnv } from "./env.js"
+import { instrumentQueryLogging } from "./db/query-logs.js"
 
 const DEFAULT_PORT = 5432
 
@@ -72,6 +73,11 @@ let pool: Pool | undefined
  * `structure.sql` file at the package root; the deploy pipeline reconciles it
  * before the app serves its first request.
  *
+ * Every query it runs emits a `debug`-level `DB query` log line carrying the
+ * SQL, its parameters, and the returned row count and ids; see {@link DbQueryLog}
+ * for the exact shape. Lowering the app's log level to `debug` surfaces the
+ * app's database activity.
+ *
  * @example
  * ```ts
  * const { rows } = await appDatabase().query(
@@ -87,7 +93,7 @@ export function appDatabase(): Pool {
 function createPool(): Pool {
   const conn = parseDatabaseUrl(readEnv(ENV_DATABASE_URL))
   const region = readEnv(ENV_AWS_REGION)
-  return new Pool({
+  const pool = new Pool({
     host: conn.host,
     port: conn.port,
     user: conn.user,
@@ -97,4 +103,5 @@ function createPool(): Pool {
     // a fresh, unexpired token.
     password: () => databaseAuthToken({ conn, region })
   })
+  return instrumentQueryLogging(pool)
 }
