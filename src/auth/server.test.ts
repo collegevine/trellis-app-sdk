@@ -27,7 +27,7 @@ describe("getTrellisUser", () => {
       }
     }
     const user = runWithRequest(
-      requestWithCookie(encodeCookie(session)),
+      { request: requestWithCookie(encodeCookie(session)) },
       () => getTrellisUser()
     )
     expect(user).toEqual({
@@ -48,7 +48,7 @@ describe("getTrellisUser", () => {
       user: { name: "Bilbo Baggins" }
     }
     const user = runWithRequest(
-      requestWithCookie(encodeCookie(legacy)),
+      { request: requestWithCookie(encodeCookie(legacy)) },
       () => getTrellisUser()
     )
     expect(user).toEqual({
@@ -59,7 +59,10 @@ describe("getTrellisUser", () => {
   })
 
   it("returns null when no cookie header is present", () => {
-    const user = runWithRequest(requestWithCookie(null), () => getTrellisUser())
+    const user = runWithRequest(
+      { request: requestWithCookie(null) },
+      () => getTrellisUser()
+    )
     expect(user).toBeNull()
   })
 
@@ -70,7 +73,7 @@ describe("getTrellisUser", () => {
       user: { name: "Gollum", emailHashes: [], subjectType: null }
     }
     const user = runWithRequest(
-      requestWithCookie(encodeCookie(session)),
+      { request: requestWithCookie(encodeCookie(session)) },
       () => getTrellisUser()
     )
     expect(user).toBeNull()
@@ -80,7 +83,7 @@ describe("getTrellisUser", () => {
     const request = new Request("https://endor.apps.collegevine.ai/", {
       headers: { cookie: "theme=tatooine; lang=westron" }
     })
-    const user = runWithRequest(request, () => getTrellisUser())
+    const user = runWithRequest({ request }, () => getTrellisUser())
     expect(user).toBeNull()
   })
 
