@@ -17,6 +17,7 @@ import { pathToFileURL } from "node:url"
 import { createRequestHandler } from "react-router"
 import { withAuth } from "./auth/rrv7-middleware.js"
 import { runWithRequest } from "./context.js"
+import { installJsonLogging } from "./logging.js"
 import { withStaticAssets } from "./static.js"
 
 export type FetchHandler = (request: Request) => Promise<Response>
@@ -62,6 +63,10 @@ export const handler: LambdaHandler = async (event) => {
 }
 
 async function loadFetchHandler(): Promise<FetchHandler> {
+  // Patch console before the app's server build is imported, so logs from its
+  // module-init code onward are captured as JSON.
+  installJsonLogging()
+
   const root = process.env.LAMBDA_TASK_ROOT ?? process.cwd()
   const buildUrl = pathToFileURL(resolve(root, RRV7_SERVER_BUILD_PATH)).href
   const build = await import(buildUrl)
