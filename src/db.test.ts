@@ -17,7 +17,7 @@ beforeEach(() => {
   vi.resetModules()
   getAuthToken.mockReset()
   SignerMock.mockReset().mockImplementation(() => ({ getAuthToken }))
-  PoolMock.mockReset().mockImplementation(() => ({ pool: true }))
+  PoolMock.mockReset().mockImplementation(() => ({ connect: vi.fn() }))
   delete process.env.DATABASE_URL
   delete process.env.AWS_REGION
 })
