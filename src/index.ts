@@ -21,6 +21,8 @@ export { appDatabase } from "./db.js"
 export type { DbConnection } from "./db.js"
 export type { DbQueryLog } from "./db/query-logs.js"
 
+export type { RequestEndLog, RequestStartLog } from "./request-log.js"
+
 export { getConstituentProperties } from "./constituent-properties.js"
 export type { ConstituentProperties } from "./constituent-properties.js"
 
