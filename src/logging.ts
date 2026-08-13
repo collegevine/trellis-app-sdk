@@ -64,6 +64,10 @@ const DEFAULT_LOG_LEVEL: LogLevel = "info"
  * plain `console.log` calls turn into the same shape. You do not construct this
  * structure yourself. It's here merely to document what a log call produces.
  * See {@link Logger} for how call arguments map onto `message` and `params`.
+ *
+ * The platform emits its own lines in this shape around the work it does for an
+ * app: a {@link RequestStartLog} and a {@link RequestEndLog} bracket every
+ * request, and each database query adds a {@link DbQueryLog}.
  */
 export interface AppLogLine {
   /** ISO 8601 instant the line was emitted. */
