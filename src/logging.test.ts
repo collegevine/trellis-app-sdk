@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { ENV_LOG_LEVEL } from "./env.js"
 import { installJsonLogging, Logger } from "./logging.js"
 
 describe("logging", () => {
@@ -12,15 +13,21 @@ describe("logging", () => {
     return true
   }
 
+  const originalLogLevel = process.env[ENV_LOG_LEVEL]
+
   beforeEach(() => {
     stdout = []
     stderr = []
+    // Emit at every level by default; the filtering suite overrides this.
+    process.env[ENV_LOG_LEVEL] = "debug"
     vi.spyOn(process.stdout, "write").mockImplementation(captureInto(stdout))
     vi.spyOn(process.stderr, "write").mockImplementation(captureInto(stderr))
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
+    if (originalLogLevel === undefined) delete process.env[ENV_LOG_LEVEL]
+    else process.env[ENV_LOG_LEVEL] = originalLogLevel
   })
 
   describe("installJsonLogging", () => {
@@ -156,6 +163,44 @@ describe("logging", () => {
         { level: "warn", message: "power low" },
         { level: "error", code: "E_REACTOR" }
       ])
+    })
+  })
+
+  describe("log level filtering", () => {
+    it("drops lines below the configured level", () => {
+      process.env[ENV_LOG_LEVEL] = "warn"
+
+      Logger.debug("scanning")
+      Logger.info("holding")
+      Logger.warn("shields low")
+      Logger.error("we're hit")
+
+      expect(stdout).toEqual([])
+      expect(stderr.map((entry) => entry.level)).toEqual(["warn", "error"])
+    })
+
+    it("emits every level when configured at debug", () => {
+      process.env[ENV_LOG_LEVEL] = "debug"
+
+      Logger.debug("scanning")
+      Logger.error("we're hit")
+
+      expect(stdout.map((entry) => entry.level)).toEqual(["debug"])
+      expect(stderr.map((entry) => entry.level)).toEqual(["error"])
+    })
+
+    it("defaults to info when the level is unset or unrecognized", () => {
+      for (const value of [undefined, "chatty"]) {
+        stdout.length = 0
+        if (value === undefined) delete process.env[ENV_LOG_LEVEL]
+        else process.env[ENV_LOG_LEVEL] = value
+
+        Logger.debug("scanning")
+        Logger.info("holding")
+
+        expect(stdout.map((entry) => entry.level)).toEqual(["info"])
+        expect(stderr).toEqual([])
+      }
     })
   })
 })
