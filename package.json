@@ -45,13 +45,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
-    "next": "^15.0.0",
-    "react-router": "^7.0.0"
+    "react-router": "^7.18.2"
   },
   "peerDependenciesMeta": {
-    "next": {
-      "optional": true
-    },
     "react-router": {
       "optional": true
     }
@@ -59,12 +55,15 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/pg": "^8.20.0",
-    "next": "^15.0.0",
-    "react-router": "^7.0.0",
+    "next": "^16.3.3",
+    "react-router": "^7.18.2",
     "typedoc": "^0.28.20",
     "typedoc-plugin-markdown": "^4.12.0",
     "typescript": "^5.6.0",
     "vitest": "^3.2.6"
+  },
+  "overrides": {
+    "nanoid": "3.3.18"
   },
   "dependencies": {
     "@aws-sdk/rds-signer": "^3.1063.0",
