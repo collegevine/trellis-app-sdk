@@ -46,6 +46,7 @@ describe("DB query logging", () => {
         "DB query",
         {
           query: "SELECT id, name FROM hobbits WHERE shire = $1",
+          durationMs: expect.any(Number),
           params: ["yes"],
           rowCount: 2,
           rowIds: [7, 9]
@@ -67,6 +68,7 @@ describe("DB query logging", () => {
       "DB query",
       {
         query: "UPDATE rings SET bearer = $1 WHERE id = $2",
+        durationMs: expect.any(Number),
         params: ["Frodo", 1],
         rowCount: 0
       }
@@ -90,6 +92,7 @@ describe("DB query logging", () => {
       "DB query",
       {
         query: "SELECT id FROM palantiri WHERE keeper = $1",
+        durationMs: expect.any(Number),
         params: ["Denethor"],
         rowCount: 1,
         rowIds: [1]
@@ -128,8 +131,30 @@ describe("DB query logging", () => {
 
     expect(logged[0]).toEqual([
       "DB query",
-      { query: "SELECT name FROM wizards", rowCount: 1 }
+      {
+        query: "SELECT name FROM wizards",
+        durationMs: expect.any(Number),
+        rowCount: 1
+      }
     ])
+  })
+
+  it("reports how long the statement actually took", async () => {
+    const SLOW_MS = 25
+    const clientQuery = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ rows: [], rowCount: 0 }), SLOW_MS)
+        )
+    )
+    const client = await connectInstrumented(clientQuery)
+
+    await client.query("SELECT pg_sleep(1)")
+
+    const fields = logged[0]![1] as { durationMs: number }
+    // A floor rather than the exact sleep: setTimeout can fire marginally early
+    // against performance.now(). Still catches a hardcoded or zero duration.
+    expect(fields.durationMs).toBeGreaterThan(SLOW_MS / 2)
   })
 
   it("emits no line when the query fails", async () => {

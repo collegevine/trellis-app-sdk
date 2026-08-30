@@ -20,6 +20,7 @@ export type { UploadResult } from "./uploads.js"
 export { appDatabase } from "./db.js"
 export type { DbConnection } from "./db.js"
 export type { DbQueryLog } from "./db/query-logs.js"
+export type { DbAuthTokenLog, DbConnectLog } from "./db/connection-logs.js"
 
 export type { RequestEndLog, RequestStartLog } from "./request-log.js"
 

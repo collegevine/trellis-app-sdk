@@ -3,6 +3,7 @@
 
 import type { Pool, PoolClient, QueryResult } from "pg"
 import { type AppLogLine, Logger } from "../logging.js"
+import { type ConnectCallback, elapsedMs } from "./instrumentation.js"
 
 // Max values for query parts, above which we truncate to avoid bloating the logs.
 const MAX_QUERY_LENGTH = 1000
@@ -10,12 +11,6 @@ const MAX_PARAMS = 20
 const MAX_ROW_IDS = 100
 
 const DB_QUERY_MESSAGE = "DB query"
-
-type ConnectCallback = (
-  err: Error | undefined,
-  client: PoolClient | undefined,
-  done: (release?: unknown) => void
-) => void
 
 // Every query pg runs passes through a pooled client's `query` method, which is
 // what we wrap here.
@@ -73,29 +68,34 @@ function loggedQuery(
     return query(...args)
   }
 
+  const startedAt = performance.now()
   const last = args[args.length - 1]
 
   if (typeof last === "function") {
     const callback = last as (err: unknown, result: QueryResult) => void
     args[args.length - 1] = (err: unknown, result: QueryResult) => {
-      if (!err) safeEmit(text, values, result)
+      if (!err) safeEmit(text, values, result, elapsedMs(startedAt))
       callback(err, result)
     }
     return query(...args)
   }
 
   const result = query(...args) as Promise<QueryResult>
-  result.then((r) => safeEmit(text, values, r), () => {})
+  result.then((r) => safeEmit(text, values, r, elapsedMs(startedAt)), () => {})
   return result
 }
 
 function safeEmit(
   text: string,
   values: unknown[] | undefined,
-  result?: QueryResult
+  result?: QueryResult,
+  durationMs?: number
 ): void {
   try {
-    Logger.debug(DB_QUERY_MESSAGE, queryLogFields(text, values, result))
+    Logger.debug(
+      DB_QUERY_MESSAGE,
+      queryLogFields(text, values, result, durationMs)
+    )
   } catch {
     // Swallow errors. If we failed to log, that's not worth crashing the query.
   }
@@ -109,8 +109,8 @@ function safeEmit(
  * what a query produces in the logs.
  *
  * A streaming (cursor/stream) query is logged when it is dispatched, before any
- * rows arrive, so its line carries `query` and `params` but no `rowCount` or
- * `rowIds`.
+ * rows arrive, so its line carries `query` and `params` but no `durationMs`,
+ * `rowCount`, or `rowIds`.
  *
  * Oversized parts are truncated so one line can't blow up: an overflowing
  * `params` or `rowIds` array keeps its leading entries and ends with a
@@ -122,6 +122,15 @@ export interface DbQueryLog extends AppLogLine {
 
   /** The SQL text, truncated with a trailing `"…"` past ~1000 characters. */
   query: string
+
+  /**
+   * How long, in milliseconds, the statement took. This covers execution on an
+   * already-acquired connection, not the cost of obtaining one: when a query is
+   * slow because the pool had to open a connection first, that time appears in
+   * the accompanying {@link DbConnectLog} instead. Omitted for a streaming
+   * query, which is logged before it completes.
+   */
+  durationMs?: number
 
   /**
    * The query's bind parameters, present only when it had any. Past 20, the
@@ -145,12 +154,14 @@ export interface DbQueryLog extends AppLogLine {
 function queryLogFields(
   text: string,
   values: unknown[] | undefined,
-  result?: QueryResult
-): Pick<DbQueryLog, "query" | "params" | "rowCount" | "rowIds"> {
+  result?: QueryResult,
+  durationMs?: number
+): Pick<DbQueryLog, "query" | "durationMs" | "params" | "rowCount" | "rowIds"> {
   const rows = result?.rows
   const ids = rows ? rowIds(rows) : undefined
   return {
     query: truncateText(text, MAX_QUERY_LENGTH),
+    ...(durationMs === undefined ? {} : { durationMs }),
     ...(values && values.length > 0
       ? { params: truncateList(values, MAX_PARAMS) }
       : {}),

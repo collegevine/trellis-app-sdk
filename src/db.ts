@@ -2,6 +2,10 @@ import { Signer } from "@aws-sdk/rds-signer"
 import { Pool } from "pg"
 import { ENV_AWS_REGION, ENV_DATABASE_URL, readEnv } from "./env.js"
 import { instrumentQueryLogging } from "./db/query-logs.js"
+import {
+  instrumentConnectLogging,
+  logAuthTokenTiming
+} from "./db/connection-logs.js"
 
 const DEFAULT_PORT = 5432
 
@@ -74,9 +78,12 @@ let pool: Pool | undefined
  * before the app serves its first request.
  *
  * Every query it runs emits a `debug`-level `DB query` log line carrying the
- * SQL, its parameters, and the returned row count and ids; see {@link DbQueryLog}
- * for the exact shape. Lowering the app's log level to `debug` surfaces the
- * app's database activity.
+ * SQL, its parameters, how long the statement took, and the returned row count
+ * and ids; see {@link DbQueryLog} for the exact shape. Acquiring a connection is
+ * logged separately, as a {@link DbConnectLog} and, when a new physical
+ * connection is opened, a {@link DbAuthTokenLog} -- so a slow first query can be
+ * attributed to the statement, the TLS handshake, or the IAM token rather than
+ * guessed at. Lowering the app's log level to `debug` surfaces all of it.
  *
  * @example
  * ```ts
@@ -101,7 +108,7 @@ function createPool(): Pool {
     ssl: conn.ssl,
     // pg calls this for each new physical connection, so every connection gets
     // a fresh, unexpired token.
-    password: () => databaseAuthToken({ conn, region })
+    password: logAuthTokenTiming(() => databaseAuthToken({ conn, region }))
   })
-  return instrumentQueryLogging(pool)
+  return instrumentConnectLogging(instrumentQueryLogging(pool))
 }
