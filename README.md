@@ -156,6 +156,38 @@ read-only on the Slate side. Deployments without an agent or whose
 product has no Slate credential receive `slate_not_configured` (HTTP
 422).
 
+### Ontology
+
+Run a read-only SQL query against the school's ontology. Access is
+governed: the query runs as the deployment's agent instance and returns
+only the subset the agent's permission groups grant. Every query targets
+a named data schema.
+
+```ts
+import { queryOntology } from "@collegevine/trellis-app-sdk"
+
+const { columns, rows, truncated } = await queryOntology({
+  dataSchema: "ontology_v2",
+  sql: "SELECT id, name FROM core_person",
+  maxRows: 500
+})
+
+console.log(columns) // [{ name: "id", type: "BIGINT" }, ...]
+console.log(rows[0]) // ["1", "Paul Atreides"]
+```
+
+`rows` come back as arrays in `columns` order; every non-null cell is a
+string, whatever its SQL type. `truncated` is true when `maxRows` (or the
+service's default cap) was hit. Discover the data schemas available to a
+school with the `list_ontology_data_schemas` MCP tool, and a schema's
+tables and columns with `describe_ontology_effective_schema`, during
+development.
+
+A query for data the agent's permissions do not cover receives
+`ontology_forbidden` (HTTP 403); a deployment with no agent instance or a
+school with no ontology configured receives `ontology_not_configured`
+(HTTP 422).
+
 ### LLM inference
 
 Run a single LLM inference. The app supplies a free-form message array

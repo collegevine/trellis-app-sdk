@@ -11,6 +11,13 @@ export type {
 export { querySlate } from "./slate.js"
 export type { SlateQueryResult } from "./slate.js"
 
+export { queryOntology } from "./ontology.js"
+export type {
+  OntologyColumn,
+  OntologyQuery,
+  OntologyQueryResult
+} from "./ontology.js"
+
 export { runLlmInference } from "./llm.js"
 export type { LlmInferenceResult, LlmMessage, LlmRole } from "./llm.js"
 
