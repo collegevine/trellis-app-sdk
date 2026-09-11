@@ -11,6 +11,8 @@ import type { UploadTicket, UploadTicketRequest } from "./protocol.js"
 
 const READ_URL_PATH = "uploads/read-url"
 
+const ADOPT_PATH = "uploads/adopt"
+
 const UPLOAD_URL_EXPIRES_IN_SECONDS = 15 * 60
 
 const FILENAME_MAX_LENGTH = 100
@@ -94,4 +96,51 @@ export async function fileUrl(s3Key: string): Promise<string> {
     { method: "POST", body: { s3_key: s3Key } }
   )
   return url
+}
+
+/**
+ * Make a user-uploaded file (i.e. uploaded via `uploadFile` from
+ * `@collegevine/trellis-app-sdk/client`) usable as multimodal input to
+ * {@link runLlmInference}, and return the `upload_id` to pass in that call's
+ * `uploadIds`. Server-only.
+ *
+ * The platform copies the bytes out of storage on its own side. The stored file
+ * stays where it is, so `fileUrl` keeps working for it afterwards.
+ *
+ * Accepted content types are the ones {@link runLlmInference} takes:
+ * `image/jpeg`, `image/png`, `image/gif`, `image/webp`, and `application/pdf`.
+ * The type is determined from the file's own bytes, not from what the browser
+ * declared at upload time, so an mp4 renamed to `.png` is refused here.
+ *
+ * @param s3Key - The key `uploadFile` returned for the file.
+ * @param filename - Name to carry into inference; required, and passed to the
+ * model as the document title for PDFs.
+ * @throws {@link TrellisAppApiError} whose `body.error` is one of:
+ * `forbidden_key` (403, the key belongs to another app), `file_not_found` (404,
+ * nothing stored under that key), `file_too_large` (400, over the 20MB cap),
+ * `unsupported_file_type` (400, the bytes are not an accepted type),
+ * `invalid_file` (400, no filename supplied).
+ *
+ * @example
+ * ```ts
+ * export async function action({ request }: ActionFunctionArgs) {
+ *   const { s3Key, filename } = await request.json()
+ *   const uploadId = await adoptFile(s3Key, filename)
+ *   const { text } = await runLlmInference(
+ *     [{ role: "user", content: "Summarize this." }],
+ *     [uploadId]
+ *   )
+ *   return { text }
+ * }
+ * ```
+ */
+export async function adoptFile(
+  s3Key: string,
+  filename: string
+): Promise<string> {
+  const { upload_id } = await request<{ upload_id: string }>(ADOPT_PATH, {
+    method: "POST",
+    body: { s3_key: s3Key, filename }
+  })
+  return upload_id
 }
