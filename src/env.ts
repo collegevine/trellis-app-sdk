@@ -11,6 +11,12 @@ export const ENV_DEPLOYMENT_ID = "TRELLIS_APP_DEPLOYMENT_ID"
 export const ENV_DATABASE_URL = "DATABASE_URL"
 export const ENV_AWS_REGION = "AWS_REGION"
 
+// End-user file uploads. The prefix is this app's own key space within the S3
+// bucket (i.e. `<env>/<school_id>/<app_id>/`), unaccessible to other apps.
+export const ENV_UPLOADS_BUCKET = "TRELLIS_APP_UPLOADS_BUCKET"
+export const ENV_UPLOADS_PREFIX = "TRELLIS_APP_UPLOADS_PREFIX"
+export const ENV_UPLOADS_MAX_BYTES = "TRELLIS_APP_UPLOADS_MAX_BYTES"
+
 export const AUTH_MODE_ANONYMOUS = "anonymous"
 export const AUTH_MODE_AUTHENTICATED = "authenticated"
 

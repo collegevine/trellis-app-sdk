@@ -15,6 +15,10 @@
       "types": "./dist/auth/middleware.d.ts",
       "default": "./dist/auth/middleware.js"
     },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    },
     "./auth/rrv7-middleware": {
       "types": "./dist/auth/rrv7-middleware.d.ts",
       "default": "./dist/auth/rrv7-middleware.js"
@@ -66,7 +70,9 @@
     "nanoid": "3.3.18"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1130.0",
     "@aws-sdk/rds-signer": "^3.1063.0",
+    "@aws-sdk/s3-request-presigner": "^3.1130.0",
     "pg": "^8.21.0"
   }
 }
