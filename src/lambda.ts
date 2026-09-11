@@ -20,6 +20,7 @@ import { runWithRequest } from "./context.js"
 import { installJsonLogging } from "./logging.js"
 import { logRequestEnd, logRequestStart } from "./request-log.js"
 import { withStaticAssets } from "./static.js"
+import { withUploadTickets } from "./user-uploads/endpoint.js"
 
 export type FetchHandler = (request: Request) => Promise<Response>
 
@@ -80,7 +81,11 @@ async function loadFetchHandler(): Promise<FetchHandler> {
   const build = await import(buildUrl)
   return withStaticAssets(
     resolve(root, RRV7_CLIENT_BUILD_DIR),
-    withAuth(createRequestHandler(build))
+    withAuth(
+      withUploadTickets( // This endpoint is wrapped in auth on purpose.
+        createRequestHandler(build)
+      )
+    )
   )
 }
 

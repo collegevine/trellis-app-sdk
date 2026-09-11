@@ -24,6 +24,8 @@ export type { LlmInferenceResult, LlmMessage, LlmRole } from "./llm.js"
 export { uploadFile } from "./uploads.js"
 export type { UploadResult } from "./uploads.js"
 
+export { fileUrl } from "./user-uploads/server.js"
+
 export { appDatabase } from "./db.js"
 export type { DbConnection } from "./db.js"
 export type { DbQueryLog } from "./db/query-logs.js"
