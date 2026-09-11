@@ -287,6 +287,29 @@ export async function loader() {
 Such read URLs returned by `fileUrl` expire in five minutes, so mint them per
 render rather than storing them long-term.
 
+To send such a file to the model, adopt it: the platform copies the bytes into
+its own storage on its side and hands back an upload id, which is what
+`runLlmInference` takes. The bytes still never pass through the app.
+
+```ts
+import { adoptFile, runLlmInference } from "@collegevine/trellis-app-sdk"
+
+export async function action({ request }: ActionFunctionArgs) {
+  const { s3Key, filename } = await request.json()
+  const uploadId = await adoptFile(s3Key, filename)
+  const { text } = await runLlmInference(
+    [{ role: "user", content: "Summarize this." }],
+    [uploadId]
+  )
+  return { text }
+}
+```
+
+Adopting leaves the stored file alone, so `fileUrl` keeps working for it. Only
+the types `runLlmInference` accepts can be adopted, and the check is made
+against the file's own bytes rather than the content type the browser declared
+at upload time.
+
 The SDK serves the presigning endpoint itself, at the reserved path
 `POST /_trellis/uploads`; an app does not write a route for it.
 
@@ -296,9 +319,12 @@ mess with each other's user uploads.
 A refused claim comes back as `UploadError` with `body.error` set to
 `file_too_large`, `unsupported_file_type` (missing content type, or one
 carrying parameters such as `; charset=`), or `invalid_file` (blank filename
-or a size that is not a positive integer). `fileUrl` throws
+or a size that is not a positive integer). `fileUrl` and `adoptFile` throw
 `TrellisAppApiError` with `forbidden_key` (HTTP 403) for a key belonging to
-another app.
+another app; `adoptFile` also throws `file_not_found` (HTTP 404, nothing
+stored under that key), `file_too_large` (HTTP 400, over the 20MB cap),
+`unsupported_file_type` (HTTP 400, the bytes are not an accepted type), and
+`invalid_file` (HTTP 400, no filename).
 
 ### Database
 
