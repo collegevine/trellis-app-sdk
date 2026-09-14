@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { fileUrl, presignUpload } from "./server.js"
+import { adoptFile, fileUrl, presignUpload } from "./server.js"
 
 const API_URL = "https://api.example.com/trellis/apps/api/v1/"
 const SECRET = "tas_use-the-force-luke"
@@ -128,6 +128,46 @@ describe("fileUrl", () => {
       name: "TrellisAppApiError",
       status: 403,
       body: { error: "forbidden_key" }
+    })
+  })
+})
+
+describe("adoptFile", () => {
+  it("hands the platform the key and filename, and returns the upload id for inference", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ data: { upload_id: "b9f1-upload" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      })
+    )
+
+    const uploadId = await adoptFile(`${PREFIX}abc/transcript.pdf`, "transcript.pdf")
+
+    expect(uploadId).toBe("b9f1-upload")
+    const [calledUrl, init] = fetchMock.mock.calls[0]!
+    expect(calledUrl).toBe(
+      "https://api.example.com/trellis/apps/api/v1/uploads/adopt"
+    )
+    expect(init.method).toBe("POST")
+    expect(init.headers.Authorization).toBe(`Bearer ${SECRET}`)
+    expect(JSON.parse(init.body)).toEqual({
+      s3_key: `${PREFIX}abc/transcript.pdf`,
+      filename: "transcript.pdf"
+    })
+  })
+
+  it("surfaces a file the platform refuses to type as TrellisAppApiError", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ error: "unsupported_file_type" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      })
+    )
+
+    await expect(adoptFile(`${PREFIX}abc/clip.png`, "clip.png")).rejects.toMatchObject({
+      name: "TrellisAppApiError",
+      status: 400,
+      body: { error: "unsupported_file_type" }
     })
   })
 })
