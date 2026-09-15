@@ -16,8 +16,12 @@ beforeEach(() => {
   // A fresh module each test resets the process-wide pool singleton.
   vi.resetModules()
   getAuthToken.mockReset()
-  SignerMock.mockReset().mockImplementation(() => ({ getAuthToken }))
-  PoolMock.mockReset().mockImplementation(() => ({ connect: vi.fn() }))
+  SignerMock.mockReset().mockImplementation(function () {
+    return { getAuthToken }
+  })
+  PoolMock.mockReset().mockImplementation(function () {
+    return { connect: vi.fn() }
+  })
   delete process.env.DATABASE_URL
   delete process.env.AWS_REGION
 })
