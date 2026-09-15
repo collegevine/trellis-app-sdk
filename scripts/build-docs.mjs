@@ -25,11 +25,14 @@ const ROOT_MODULE = "index"
 const MERGED_FILE = `${OUT_DIR}/${ROOT_MODULE}.md`
 
 const INTRO = [
-  "Server-side SDK for Trellis Apps. Every function here is server-only: call",
-  "it from a route loader, action, or resource route, never from",
-  "client-rendered component code. Data-source and database helpers are imported",
-  "from the package root; `getTrellisUser` is imported from the `/auth/server`",
-  "subpath. Any non-2xx response throws `TrellisAppApiError`."
+  "SDK for Trellis Apps. Everything in the package root and under",
+  "`/auth/server` is server-only: call it from a route loader, action, or",
+  "resource route, never from client-rendered component code. Data-source and",
+  "database helpers are imported from the package root; `getTrellisUser` is",
+  "imported from the `/auth/server` subpath. Any non-2xx response throws",
+  "`TrellisAppApiError`.",
+  "\n\nThe `/client` subpath is the one exception, and the only module meant for",
+  "use in the browser."
 ].join(" ")
 
 // TypeDoc names each module by its path relative to the common parent directory
