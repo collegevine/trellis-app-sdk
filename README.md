@@ -165,9 +165,12 @@ product has no Slate credential receive `slate_not_configured` (HTTP
 ### Ontology
 
 Run a read-only SQL query against the school's ontology. Access is
-governed: the query runs as the deployment's agent instance and returns
-only the subset the agent's permission groups grant. Every query targets
-a named data schema.
+governed: a signed-in HQ or school user queries as themselves and sees
+only what their own permission groups grant, while an anonymous or
+constituent session queries as the app, whose own permission groups are
+the grant. A constituent's identity is additionally bound as the
+`constituent_id` caller attribute that constituent-scoped data schemas
+filter rows by. Every query targets a named data schema.
 
 ```ts
 import { queryOntology } from "@collegevine/trellis-app-sdk"
@@ -189,10 +192,9 @@ school with the `list_ontology_data_schemas` MCP tool, and a schema's
 tables and columns with `describe_ontology_effective_schema`, during
 development.
 
-A query for data the agent's permissions do not cover receives
-`ontology_forbidden` (HTTP 403); a deployment with no agent instance or a
-school with no ontology configured receives `ontology_not_configured`
-(HTTP 422).
+A query for data the acting principal's permissions do not cover
+receives `ontology_forbidden` (HTTP 403); a school with no ontology
+configured receives `ontology_not_configured` (HTTP 422).
 
 ### LLM inference
 
