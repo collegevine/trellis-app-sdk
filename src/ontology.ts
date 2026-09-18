@@ -45,25 +45,29 @@ export interface OntologyQuery {
 /**
  * Run a read-only SQL query against the school's ontology. Server-only.
  *
- * Access is governed: the query runs as the deployment's agent instance and
- * returns only the subset of the ontology that the agent's permission groups
- * grant. Every query targets a named data schema, passed as `dataSchema`.
+ * Access is governed: a signed-in HQ or school user queries as themselves and
+ * sees only what their own permission groups grant. An anonymous session, or
+ * one signed in as a constituent, queries as the app itself, whose own
+ * permission groups are the grant; a constituent's identity, when available, is
+ * also passed to the query as a sidecar parameter, which may be used by
+ * constituent-scoped data schemas to filter rows. Every query targets a named
+ * data schema, passed as `dataSchema`.
  *
- * During development, discover the data schemas available to the school with the
- * `list_ontology_data_schemas` MCP tool, and inspect a schema's tables and
+ * During development, discover the data schemas available to the school with
+ * the `list_ontology_data_schemas` MCP tool, and inspect a schema's tables and
  * columns with `describe_ontology_effective_schema`. Build the SQL against that
- * governed schema: a table or column outside what the agent's permissions grant
- * is not queryable and comes back as `ontology_forbidden`.
+ * governed schema: a table or column outside what the acting principal's
+ * permissions grant is not queryable and comes back as `ontology_forbidden`.
  *
  * @param query - The data schema, SQL, and optional row cap.
  * @throws {@link TrellisAppApiError} whose `body.error` is one of:
- * `ontology_sql_error` (400, malformed or rejected SQL),
- * `ontology_forbidden` (403, the query asked for data the agent's permissions do
- * not cover; `body.details.code` carries the upstream reason code),
- * `ontology_not_configured` (422, the deployment has no agent instance or the
- * school has no ontology set up), `ontology_provisioning` (409, the school's
- * ontology views are still being built), `ontology_timeout` (504),
- * `ontology_unavailable` (500, the ontology service could not be reached).
+ * `ontology_sql_error` (400, malformed or rejected SQL), `ontology_forbidden`
+ * (403, the query asked for data the acting principal's permissions do not
+ * cover; `body.details.code` carries the upstream reason code),
+ * `ontology_not_configured` (422, the school has no ontology set up),
+ * `ontology_provisioning` (409, the school's ontology views are still being
+ * built), `ontology_timeout` (504), `ontology_unavailable` (500, the ontology
+ * service could not be reached).
  *
  * @example
  * ```ts
