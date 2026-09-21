@@ -31,6 +31,9 @@ const INTRO = [
   "database helpers are imported from the package root; `getTrellisUser` is",
   "imported from the `/auth/server` subpath. Any non-2xx response throws",
   "`TrellisAppApiError`.",
+  "\n\nEvery call the SDK makes to the Trellis App API emits a `debug`-level",
+  "`API call` log line describing it; see `ApiCallLog` for the fields to search",
+  "on.",
   "\n\nThe `/client` subpath is the one exception, and the only module meant for",
   "use in the browser."
 ].join(" ")

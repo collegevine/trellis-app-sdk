@@ -139,6 +139,7 @@ import {
   readEnv
 } from "../env.js"
 import type { FetchHandler } from "../lambda.js"
+import { loggedApiFetch } from "../api-log.js"
 import {
   CALLBACK_PATH,
   LOGIN_PATH,
@@ -284,7 +285,7 @@ async function exchangeCode(params: {
   codeVerifier: string
 }): Promise<SessionCookie | ExchangeFailure> {
   const baseUrl = readEnv(ENV_TRELLIS_APP_API_URL).replace(/\/+$/, "")
-  const response = await fetch(`${baseUrl}/oauth/token`, {
+  const response = await loggedApiFetch(`${baseUrl}/oauth/token`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${readEnv(ENV_TRELLIS_APP_API_SECRET)}`,

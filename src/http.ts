@@ -13,6 +13,7 @@ import {
   type SessionCookie
 } from "./auth/cookies.js"
 import { currentRequest } from "./context.js"
+import { loggedApiFetch } from "./api-log.js"
 
 /**
  * Thrown by every SDK call on any non-2xx response (or when a 2xx body is not
@@ -64,7 +65,7 @@ export async function request<T>(
   }
   if (options.body !== undefined) headers["Content-Type"] = "application/json"
 
-  const response = await fetch(joinUrl(baseUrl, path), {
+  const response = await loggedApiFetch(joinUrl(baseUrl, path), {
     method: options.method ?? "GET",
     headers,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined
@@ -82,7 +83,7 @@ export async function requestRaw<T>(
 ): Promise<T> {
   const baseUrl = readEnv(ENV_TRELLIS_APP_API_URL)
 
-  const response = await fetch(joinUrl(baseUrl, path), {
+  const response = await loggedApiFetch(joinUrl(baseUrl, path), {
     method: "POST",
     headers: {
       Authorization: authorizationHeader(),

@@ -67,7 +67,8 @@ const DEFAULT_LOG_LEVEL: LogLevel = "info"
  *
  * The platform emits its own lines in this shape around the work it does for an
  * app: a {@link RequestStartLog} and a {@link RequestEndLog} bracket every
- * request, and each database query adds a {@link DbQueryLog}.
+ * request, each database query adds a {@link DbQueryLog}, and each Trellis App
+ * API call the SDK makes adds an {@link ApiCallLog}.
  */
 export interface AppLogLine {
   /** ISO 8601 instant the line was emitted. */
