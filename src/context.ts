@@ -16,9 +16,13 @@ export function runWithRequest<T>(context: RequestContext, fn: () => T): T {
 }
 
 export function currentRequest(): Request {
-  const ctx = store.getStore()
-  if (!ctx) throw new Error("currentRequest called outside a request scope")
-  return ctx.request
+  const request = currentRequestIfAny()
+  if (!request) throw new Error("currentRequest called outside a request scope")
+  return request
+}
+
+export function currentRequestIfAny(): Request | undefined {
+  return store.getStore()?.request
 }
 
 export function currentRequestId(): string | undefined {

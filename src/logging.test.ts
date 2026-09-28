@@ -244,5 +244,27 @@ describe("logging", () => {
         message: "in scope"
       })
     })
+
+    it("marks every line emitted while serving a health-check probe", () => {
+      const probe = new Request("https://endor.apps.collegevine.ai/", {
+        headers: { "x-trellis-health-check": "1" }
+      })
+
+      runWithRequest({ request: probe }, () => {
+        Logger.info("db query", { sql: "select 1" })
+        Logger.warn("slow")
+      })
+      runWithRequest({ request: new Request("https://endor.apps.collegevine.ai/") }, () =>
+        Logger.info("db query", { sql: "select 1" })
+      )
+
+      expect(stdout).toEqual([
+        { level: "info", message: "db query", sql: "select 1", healthCheck: true },
+        { level: "info", message: "db query", sql: "select 1" }
+      ])
+      expect(stderr).toEqual([
+        { level: "warn", message: "slow", healthCheck: true }
+      ])
+    })
   })
 })
