@@ -2,9 +2,16 @@ export { TrellisAppApiError } from "./http.js"
 
 export { queryTinybirdPipe } from "./tinybird.js"
 export type {
+  AgentActivityFilter,
+  AgentActivityScope,
+  AgentsConstituentCommunicationsParams,
+  AgentsCountParams,
+  AgentsFieldValuesParams,
+  AgentsRawEventsParams,
+  NonEmptyList,
   TinybirdColumnMeta,
-  TinybirdParamValue,
-  TinybirdParams,
+  TinybirdDateTime,
+  TinybirdIntervalUnit,
   TinybirdResponse
 } from "./tinybird.js"
 

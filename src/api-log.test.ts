@@ -7,6 +7,15 @@ import { CALLBACK_PATH, STATE_COOKIE, encodeCookie, type StateCookie } from "./a
 const BASE_URL = "https://api.example.com/trellis/apps/api/v1/"
 const SECRET = "tas_speak-friend-and-enter"
 const PIPE = "agents__count"
+const PARAMS = {
+  mode: "total",
+  action_or_event_id: ["email-opened"],
+  date_range_after: "2026-09-21 05:00:00",
+  date_range_before: "2026-09-28 05:00:00"
+} as const
+const QUERY =
+  "mode=total&action_or_event_id=email-opened" +
+  "&date_range_after=2026-09-21+05%3A00%3A00&date_range_before=2026-09-28+05%3A00%3A00"
 
 const fetchMock = vi.fn()
 
@@ -35,7 +44,7 @@ describe("API call logging", () => {
       jsonResponse(200, { data: { data: [], meta: [], rows: 0 } })
     )
 
-    await queryTinybirdPipe(PIPE, { realm: "middle-earth" })
+    await queryTinybirdPipe(PIPE, PARAMS)
 
     expect(logged).toEqual([
       [
@@ -43,7 +52,7 @@ describe("API call logging", () => {
         {
           path: "/trellis/apps/api/v1/tinybird/agents__count",
           method: "GET",
-          query: "realm=middle-earth",
+          query: QUERY,
           status: 200,
           durationMs: expect.any(Number)
         }
@@ -54,13 +63,14 @@ describe("API call logging", () => {
   it("logs the status of a call the API refused, which the SDK throws on", async () => {
     fetchMock.mockResolvedValue(jsonResponse(409, { error: "school_not_provisioned" }))
 
-    await expect(queryTinybirdPipe(PIPE)).rejects.toBeInstanceOf(TrellisAppApiError)
+    await expect(queryTinybirdPipe(PIPE, PARAMS)).rejects.toBeInstanceOf(TrellisAppApiError)
 
     expect(logged[0]).toEqual([
       "API call",
       {
         path: "/trellis/apps/api/v1/tinybird/agents__count",
         method: "GET",
+        query: QUERY,
         status: 409,
         durationMs: expect.any(Number)
       }
@@ -71,7 +81,7 @@ describe("API call logging", () => {
     const detail = "socket hang up ".repeat(100)
     fetchMock.mockRejectedValue(new Error(detail))
 
-    await expect(queryTinybirdPipe(PIPE)).rejects.toThrow(detail)
+    await expect(queryTinybirdPipe(PIPE, PARAMS)).rejects.toThrow(detail)
 
     const fields = logged[0]![1] as Record<string, unknown>
     expect(fields.status).toBeUndefined()

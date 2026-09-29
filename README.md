@@ -123,14 +123,27 @@ A "Sign out" link is just a link to `/api/trellis-auth/logout`.
 import { queryTinybirdPipe } from "@collegevine/trellis-app-sdk"
 
 const result = await queryTinybirdPipe("agents__count", {
-  start_date: "2026-01-01"
+  mode: "total",
+  action_or_event_id: ["email-opened"],
+  target_agent_instance_ids: [25038],
+  date_range_after: "2026-09-21 05:00:00",
+  date_range_before: "2026-09-28 05:00:00",
+  interval_unit: "day",
+  timezone: "America/Chicago"
 })
 
 console.log(result.data)
 ```
 
-The school and agent-instance scope are filled in server-side; do not
-pass `school_id` or `agent_instance_id` yourself.
+Each pipe has its own params type (`AgentsCountParams`,
+`AgentsRawEventsParams`, `AgentsFieldValuesParams`,
+`AgentsConstituentCommunicationsParams`). A request the pipe cannot answer
+correctly, such as an empty `action_or_event_id` or `page_size` on
+`agents__count`, is a type error: Tinybird would otherwise return zeros with
+a 200.
+
+The school is filled in server-side; do not pass `school_id` yourself. Narrow
+to specific agents with `target_agent_instance_ids`.
 
 ### Slate
 
@@ -362,7 +375,7 @@ Any non-2xx response throws `TrellisAppApiError`:
 import { TrellisAppApiError } from "@collegevine/trellis-app-sdk"
 
 try {
-  await queryTinybirdPipe("not_a_real_pipe")
+  await querySlate("SELECT TOP 10 first_name FROM person")
 } catch (err) {
   if (err instanceof TrellisAppApiError) {
     console.error(err.status, err.body)
