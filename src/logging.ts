@@ -16,7 +16,7 @@
 // line is written only when its level is at or above the threshold, so the
 // platform can dial verbosity up or down without an app redeploy.
 
-import { currentRequestId } from "./context.js"
+import { currentRequestIfAny, currentRequestId } from "./context.js"
 import { ENV_DEPLOYMENT_ID, ENV_LOG_LEVEL } from "./env.js"
 
 type LogMethod = "debug" | "log" | "info" | "warn" | "error"
@@ -55,6 +55,10 @@ const LEVEL_SEVERITY: Record<LogLevel, number> = {
 // Applied when TRELLIS_APP_LOG_LEVEL is unset or not one of the levels above.
 const DEFAULT_LOG_LEVEL: LogLevel = "info"
 
+// Rails health-check job adds this header to its requests. The SDK marks those
+// requests with a boolean flag, so it can be left out of user-facing UI.
+const HEALTH_CHECK_HEADER = "x-trellis-health-check"
+
 /**
  * The JSON shape of a single log line emitted by {@link Logger}.
  *
@@ -85,6 +89,9 @@ export interface AppLogLine {
 
   /** The id of the app deployment that emits the log. */
   deploymentId?: string
+
+  /** Present only on lines emitted while serving one of the platform's health-check requests. */
+  healthCheck?: true
 
   /** The first argument when it is a string; omitted otherwise. */
   message?: string
@@ -228,12 +235,14 @@ function emit(level: LogLevel, args: unknown[]): void {
   stream.write(serialize(entry) + "\n")
 }
 
-function provenance(): Record<string, string> {
+function provenance(): Record<string, string | true> {
   const requestId = currentRequestId()
   const deploymentId = process.env[ENV_DEPLOYMENT_ID]
+  const healthCheck = currentRequestIfAny()?.headers.has(HEALTH_CHECK_HEADER)
   return {
     ...(requestId ? { requestId } : {}),
-    ...(deploymentId ? { deploymentId } : {})
+    ...(deploymentId ? { deploymentId } : {}),
+    ...(healthCheck ? { healthCheck: true } : {})
   }
 }
 
