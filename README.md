@@ -197,9 +197,8 @@ receives `ontology_forbidden` (HTTP 403); a school with no ontology
 configured receives `ontology_not_configured` (HTTP 422).
 
 Submit a published ontology Action with `executeAction`. This requires an
-authenticated App deployment and a signed-in user's access token. Staff
-callers provide a `constituentId`; constituent sessions use their own identity.
-The school and App are inferred from the token.
+authenticated App deployment and a signed-in session. Staff callers provide a
+`constituentId`; constituent sessions use their own identity.
 
 ```ts
 import { randomUUID } from "node:crypto"
@@ -216,22 +215,20 @@ const receipt = await executeAction({
   constituentId: 1
 })
 
-if (receipt.complete && receipt.succeeded) {
-  // The effect succeeded.
-}
+console.log(receipt.complete, receipt.succeeded, receipt.guarantee)
 ```
 
 HTTP 200 returns a receipt, even when the effect is pending or failed. Inspect
 `complete`, `succeeded`, `state`, and `guarantee`. The SDK does not retry Action
 submissions. If a submission times out or its outcome is uncertain, retry with
-the same `idempotencyKey` so the server can deduplicate it. Rails errors retain
+the same `idempotencyKey` so the server can deduplicate it. API errors retain
 their HTTP status and body in `TrellisAppApiError`.
 
 With the seeded Monza fixture running locally, set `TRELLIS_E2E_ACCESS_TOKEN`
 to a valid staff `tau_` token and `TRELLIS_E2E_SUBJECT_ID` to the seeded Banner
 person ID, then run `npm run test:e2e:actions`. The test sends a fresh synthetic
-submission through Rails and checks the local Banner stand-in for one
-authenticated request after repeating the same idempotency key.
+submission and checks the local Banner mock for one authenticated request after
+repeating the same idempotency key.
 
 ### LLM inference
 

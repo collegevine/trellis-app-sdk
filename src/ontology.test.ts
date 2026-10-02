@@ -181,7 +181,7 @@ describe("executeAction", () => {
           subject: 1042,
           params: { hold_type: "bursar" },
           resources: { term: { type: "core_term", id: "2026FA" } },
-          asOf: "2026-09-30T15:00:00Z",
+          asOf: new Date("2026-09-30T11:00:00-04:00"),
           idempotencyKey: "form-submission-42",
           rationale: "Submitted by the account holder"
         },
@@ -205,7 +205,7 @@ describe("executeAction", () => {
         subject: 1042,
         params: { hold_type: "bursar" },
         resources: { term: { type: "core_term", id: "2026FA" } },
-        as_of: "2026-09-30T15:00:00Z",
+        as_of: "2026-09-30T15:00:00.000Z",
         idempotency_key: "form-submission-42",
         rationale: "Submitted by the account holder"
       },
@@ -219,7 +219,7 @@ describe("executeAction", () => {
     await withSession("constituent", () =>
       executeAction({
         action: { dataSchema: "ontology_v2", key: "submit_banner_form" },
-        arguments: { subject: "1042" }
+        arguments: { subject: "1042", asOf: null }
       })
     )
 
@@ -230,6 +230,7 @@ describe("executeAction", () => {
       key: "submit_banner_form"
     })
     expect(body.arguments.subject).toBe("1042")
+    expect(body.arguments.as_of).toBeNull()
     expect(body).not.toHaveProperty("constituent_id")
     expect(init.headers.Authorization).toBe(`Bearer ${ACCESS_TOKEN}`)
   })

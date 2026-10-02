@@ -94,26 +94,26 @@ export async function queryOntology<TRow = (string | null)[]>(
   })
 }
 
-/** A published Action, identified within an ontology data schema. */
+/** Identifies a published Action within a data schema. */
 export interface ActionReference {
   dataSchema: string
   key: string
 }
 
-/** A related entity passed to an Action by one of its resource names. */
+/** Type and ID of an entity supplied as a named Action resource. */
 export interface ActionResourceRef {
   type: string
   id: string | number
 }
 
-/** Inputs to a published Action. Parameter and resource names are Action-specific. */
+/** Invocation inputs; `params` and `resources` use names defined by the Action. */
 export interface ActionArguments {
   subject: string | number
   params?: Record<string, unknown>
   resources?: Record<string, ActionResourceRef>
-  /** ISO 8601 instant. Omit or pass `null` to use the request time. */
-  asOf?: string | null
-  /** Stable key to reuse when retrying an ambiguous submission. */
+  /** As-of instant, serialized as UTC ISO 8601. Omit or use `null` for request time. */
+  asOf?: Date | null
+  /** Reuse this key when retrying a submission whose outcome is unknown. */
   idempotencyKey?: string | null
   rationale?: string | null
 }
@@ -122,20 +122,20 @@ export interface ActionArguments {
 export interface ExecuteActionRequest {
   action: ActionReference
   arguments: ActionArguments
-  /** Required for a staff token; a constituent token supplies its own identity. */
+  /** Required for staff tokens; constituent tokens identify the constituent. */
   constituentId?: number
 }
 
 /**
- * An invocation receipt. A successful HTTP response does not mean the effect
- * completed or succeeded; inspect `complete`, `succeeded`, and `guarantee`.
- * Receipt field names match the Rails response.
+ * Receipt for an Action invocation. HTTP 200 does not imply completion or
+ * success; check `complete`, `succeeded`, and `guarantee`.
  */
 export interface ActionReceipt {
   invocation: string
   action: string
   rev: number
   state: string
+  /** Action's completion criterion, such as `accepted` or `confirmed`. */
   complete_at: string
   complete: boolean
   succeeded: boolean
@@ -145,18 +145,16 @@ export interface ActionReceipt {
 }
 
 /**
- * Submit a published ontology Action as the signed-in App user. Server-only.
- * The deployment must use authenticated mode; this endpoint cannot be called
- * with an anonymous App deployment secret. Rails derives the school and App
- * from the user's access token. Staff callers must provide `constituentId`.
+ * Submit a published ontology Action for the current App user. Server-only.
+ * Requires an authenticated deployment and a signed-in session. Staff callers
+ * must supply `constituentId`; constituent sessions identify the constituent.
  *
- * A 200 response is an invocation receipt, including for pending or failed
- * effects. The SDK does not retry submissions automatically. Reuse the same
- * `idempotencyKey` if a submission's outcome is uncertain.
+ * Returns a receipt even when the Action is pending or failed. The SDK does
+ * not retry submissions. Reuse `idempotencyKey` after a timeout or lost
+ * response because the submission may already have occurred.
  *
- * @throws {@link TrellisAppApiError} for HTTP errors. Inspect `status` and
- * `body`; a 504 timeout may have submitted the effect, so retry with the same
- * idempotency key.
+ * @throws {@link TrellisAppApiError} for API or authentication errors; inspect
+ * `status` and `body`. Network failures pass through unchanged.
  *
  * @example
  * ```ts
@@ -171,9 +169,6 @@ export interface ActionReceipt {
  *   },
  *   constituentId: 1
  * })
- * if (receipt.complete && receipt.succeeded) {
- *   // The effect succeeded.
- * }
  * ```
  */
 export async function executeAction(
@@ -200,7 +195,9 @@ export async function executeAction(
         subject,
         ...(params === undefined ? {} : { params }),
         ...(resources === undefined ? {} : { resources }),
-        ...(asOf === undefined ? {} : { as_of: asOf }),
+        ...(asOf === undefined
+          ? {}
+          : { as_of: asOf === null ? null : asOf.toISOString() }),
         ...(idempotencyKey === undefined
           ? {}
           : { idempotency_key: idempotencyKey }),
