@@ -1,6 +1,8 @@
-import { request } from "./http.js"
+import { AUTH_MODE_AUTHENTICATED, readAuthMode } from "./env.js"
+import { TrellisAppApiError, request } from "./http.js"
 
 const ONTOLOGY_PATH = "ontology/query"
+const ACTIONS_EXECUTE_PATH = "actions/execute"
 
 /** A column in an {@link OntologyQueryResult}: its name and Databricks SQL type. */
 export interface OntologyColumn {
@@ -88,6 +90,123 @@ export async function queryOntology<TRow = (string | null)[]>(
       sql,
       data_schema: dataSchema,
       ...(maxRows === undefined ? {} : { max_rows: maxRows })
+    }
+  })
+}
+
+/** A published Action, identified within an ontology data schema. */
+export interface ActionReference {
+  dataSchema: string
+  key: string
+}
+
+/** A related entity passed to an Action by one of its resource names. */
+export interface ActionResourceRef {
+  type: string
+  id: string | number
+}
+
+/** Inputs to a published Action. Parameter and resource names are Action-specific. */
+export interface ActionArguments {
+  subject: string | number
+  params?: Record<string, unknown>
+  resources?: Record<string, ActionResourceRef>
+  /** ISO 8601 instant. Omit or pass `null` to use the request time. */
+  asOf?: string | null
+  /** Stable key to reuse when retrying an ambiguous submission. */
+  idempotencyKey?: string | null
+  rationale?: string | null
+}
+
+/** Arguments to {@link executeAction}. */
+export interface ExecuteActionRequest {
+  action: ActionReference
+  arguments: ActionArguments
+  /** Required for a staff token; a constituent token supplies its own identity. */
+  constituentId?: number
+}
+
+/**
+ * An invocation receipt. A successful HTTP response does not mean the effect
+ * completed or succeeded; inspect `complete`, `succeeded`, and `guarantee`.
+ * Receipt field names match the Rails response.
+ */
+export interface ActionReceipt {
+  invocation: string
+  action: string
+  rev: number
+  state: string
+  complete_at: string
+  complete: boolean
+  succeeded: boolean
+  waiting_on?: string | null
+  deduped: boolean
+  guarantee: string
+}
+
+/**
+ * Submit a published ontology Action as the signed-in App user. Server-only.
+ * The deployment must use authenticated mode; this endpoint cannot be called
+ * with an anonymous App deployment secret. Rails derives the school and App
+ * from the user's access token. Staff callers must provide `constituentId`.
+ *
+ * A 200 response is an invocation receipt, including for pending or failed
+ * effects. The SDK does not retry submissions automatically. Reuse the same
+ * `idempotencyKey` if a submission's outcome is uncertain.
+ *
+ * @throws {@link TrellisAppApiError} for HTTP errors. Inspect `status` and
+ * `body`; a 504 timeout may have submitted the effect, so retry with the same
+ * idempotency key.
+ *
+ * @example
+ * ```ts
+ * import { randomUUID } from "node:crypto"
+ * const submissionId = randomUUID()
+ * const receipt = await executeAction({
+ *   action: { dataSchema: "ontology_v1", key: "app_contract_post_note" },
+ *   arguments: {
+ *     subject: "person-id",
+ *     params: { note: "Submitted by the app", submission: submissionId },
+ *     idempotencyKey: submissionId
+ *   },
+ *   constituentId: 1
+ * })
+ * if (receipt.complete && receipt.succeeded) {
+ *   // The effect succeeded.
+ * }
+ * ```
+ */
+export async function executeAction(
+  submission: ExecuteActionRequest
+): Promise<ActionReceipt> {
+  if (readAuthMode() !== AUTH_MODE_AUTHENTICATED) {
+    throw new TrellisAppApiError(
+      "Action execution requires an authenticated Trellis App session",
+      401,
+      {
+        error: "unauthorized",
+        message: "Action execution requires an authenticated Trellis App session"
+      }
+    )
+  }
+
+  const { action, arguments: args, constituentId } = submission
+  const { subject, params, resources, asOf, idempotencyKey, rationale } = args
+  return request<ActionReceipt>(ACTIONS_EXECUTE_PATH, {
+    method: "POST",
+    body: {
+      action: { data_schema: action.dataSchema, key: action.key },
+      arguments: {
+        subject,
+        ...(params === undefined ? {} : { params }),
+        ...(resources === undefined ? {} : { resources }),
+        ...(asOf === undefined ? {} : { as_of: asOf }),
+        ...(idempotencyKey === undefined
+          ? {}
+          : { idempotency_key: idempotencyKey }),
+        ...(rationale === undefined ? {} : { rationale })
+      },
+      ...(constituentId === undefined ? {} : { constituent_id: constituentId })
     }
   })
 }

@@ -1,10 +1,27 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { queryOntology, TrellisAppApiError } from "../src/index.js"
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest"
+import {
+  executeAction,
+  queryOntology,
+  TrellisAppApiError,
+  type ActionReceipt,
+  type ExecuteActionRequest
+} from "../src/index.js"
+import { executeAction as executeOntologyAction } from "./ontology.js"
+import {
+  encodeCookie,
+  SESSION_COOKIE,
+  type SessionCookie,
+  type SubjectType
+} from "./auth/cookies.js"
+import { runWithRequest } from "./context.js"
 
 const BASE_URL = "https://api.example.com/trellis/apps/api/v1/"
 const SECRET = "tas_speak-friend-and-enter"
 const DATA_SCHEMA = "ontology_v2"
 const SQL = "SELECT id, name FROM students"
+const ACCESS_TOKEN = "tau_signed-in-user"
+
+type ExecuteAction = (submission: ExecuteActionRequest) => Promise<ActionReceipt>
 
 const fetchMock = vi.fn()
 
@@ -19,6 +36,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
   delete process.env.TRELLIS_APP_API_URL
   delete process.env.TRELLIS_APP_API_SECRET
+  delete process.env.TRELLIS_APP_AUTH_MODE
 })
 
 describe("queryOntology", () => {
@@ -130,6 +148,204 @@ describe("queryOntology", () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
+
+describe("executeAction", () => {
+  beforeEach(() => {
+    process.env.TRELLIS_APP_AUTH_MODE = "authenticated"
+  })
+
+  it("is exported by the ontology module and the public SDK entrypoint", () => {
+    expect(executeAction).toBe(executeOntologyAction)
+    expectTypeOf(executeAction).toMatchTypeOf<ExecuteAction>()
+  })
+
+  it("submits the complete request with the user's access token and returns the pending receipt", async () => {
+    const receipt = {
+      invocation: "0192c7a0-0000-7000-8000-000000000000",
+      action: "submit_banner_form",
+      rev: 3,
+      state: "authorized",
+      complete_at: "confirmed",
+      complete: false,
+      succeeded: false,
+      waiting_on: "dispatch",
+      deduped: false,
+      guarantee: "authorized; no effect submitted"
+    }
+    fetchMock.mockResolvedValue(jsonResponse(200, { data: receipt }))
+
+    const result = await withSession("school_user", () =>
+      executeAction({
+        action: { dataSchema: "ontology_v2", key: "submit_banner_form" },
+        arguments: {
+          subject: 1042,
+          params: { hold_type: "bursar" },
+          resources: { term: { type: "core_term", id: "2026FA" } },
+          asOf: "2026-09-30T15:00:00Z",
+          idempotencyKey: "form-submission-42",
+          rationale: "Submitted by the account holder"
+        },
+        constituentId: 130
+      })
+    )
+
+    expect(result).toEqual(receipt)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(url).toBe(`${BASE_URL}actions/execute`)
+    expect(init.method).toBe("POST")
+    expect(init.headers).toEqual({
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    })
+    expect(JSON.parse(init.body as string)).toEqual({
+      action: { data_schema: "ontology_v2", key: "submit_banner_form" },
+      arguments: {
+        subject: 1042,
+        params: { hold_type: "bursar" },
+        resources: { term: { type: "core_term", id: "2026FA" } },
+        as_of: "2026-09-30T15:00:00Z",
+        idempotency_key: "form-submission-42",
+        rationale: "Submitted by the account holder"
+      },
+      constituent_id: 130
+    })
+  })
+
+  it("submits a constituent action without an explicit constituent id", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { data: completedReceipt() }))
+
+    await withSession("constituent", () =>
+      executeAction({
+        action: { dataSchema: "ontology_v2", key: "submit_banner_form" },
+        arguments: { subject: "1042" }
+      })
+    )
+
+    const [, init] = fetchMock.mock.calls[0]!
+    const body = JSON.parse(init.body as string)
+    expect(body.action).toEqual({
+      data_schema: "ontology_v2",
+      key: "submit_banner_form"
+    })
+    expect(body.arguments.subject).toBe("1042")
+    expect(body).not.toHaveProperty("constituent_id")
+    expect(init.headers.Authorization).toBe(`Bearer ${ACCESS_TOKEN}`)
+  })
+
+  it("returns a 200 receipt whose Action effect failed without treating it as an HTTP error", async () => {
+    const receipt = completedReceipt()
+    fetchMock.mockResolvedValue(jsonResponse(200, { data: receipt }))
+
+    const result = await withSession("school_user", () =>
+      executeAction({
+        action: { dataSchema: "ontology_v2", key: "submit_banner_form" },
+        arguments: { subject: 1042, idempotencyKey: "form-submission-42" },
+        constituentId: 130
+      })
+    )
+
+    expect(result).toEqual(receipt)
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    {
+      status: 403,
+      body: {
+        error: "actions_error",
+        message: "Action denied",
+        details: { code: "ACTION_FORBIDDEN" }
+      }
+    },
+    {
+      status: 504,
+      body: { error: "actions_timeout", message: "Submission timed out" }
+    }
+  ])(
+    "preserves the $status Rails error and makes no automatic retry",
+    async ({ status, body }) => {
+      fetchMock.mockResolvedValue(jsonResponse(status, body))
+      const error = await captureError(() =>
+        withSession("school_user", () =>
+          executeAction({
+            action: { dataSchema: "ontology_v2", key: "submit_banner_form" },
+            arguments: { subject: 1042, idempotencyKey: "form-submission-42" },
+            constituentId: 130
+          })
+        )
+      )
+
+      expect(error).toBeInstanceOf(TrellisAppApiError)
+      expect(error).toMatchObject({ status, body })
+      expect(fetchMock).toHaveBeenCalledOnce()
+      expect(JSON.parse(fetchMock.mock.calls[0]![1].body as string)).toMatchObject({
+        arguments: { idempotency_key: "form-submission-42" }
+      })
+    }
+  )
+
+  it("rejects a missing user session without sending the deployment secret", async () => {
+    const request = new Request("https://app.example.com/")
+    const error = await captureError(() =>
+      runWithRequest({ request }, () =>
+        executeAction({
+          action: { dataSchema: "ontology_v2", key: "submit_banner_form" },
+          arguments: { subject: 1042 }
+        })
+      )
+    )
+
+    expect(error).toBeInstanceOf(TrellisAppApiError)
+    expect(error).toMatchObject({ status: 401 })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("rejects anonymous deployments without sending their deployment secret", async () => {
+    process.env.TRELLIS_APP_AUTH_MODE = "anonymous"
+
+    const error = await captureError(() =>
+      withSession("school_user", () =>
+        executeAction({
+          action: { dataSchema: "ontology_v2", key: "submit_banner_form" },
+          arguments: { subject: 1042 },
+          constituentId: 130
+        })
+      )
+    )
+
+    expect(error).toBeInstanceOf(TrellisAppApiError)
+    expect(error).toMatchObject({ status: 401 })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+function withSession<T>(subjectType: SubjectType, fn: () => T): T {
+  const session: SessionCookie = {
+    accessToken: ACCESS_TOKEN,
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    user: { name: "Test user", emailHashes: [], subjectType }
+  }
+  const request = new Request("https://app.example.com/", {
+    headers: { cookie: `${SESSION_COOKIE}=${encodeCookie(session)}` }
+  })
+  return runWithRequest({ request }, fn)
+}
+
+function completedReceipt(): ActionReceipt {
+  return {
+    invocation: "0192c7a0-0000-7000-8000-000000000001",
+    action: "submit_banner_form",
+    rev: 3,
+    state: "failed",
+    complete_at: "confirmed",
+    complete: true,
+    succeeded: false,
+    deduped: true,
+    guarantee: "effect failed"
+  }
+}
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {

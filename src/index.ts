@@ -11,8 +11,13 @@ export type {
 export { querySlate } from "./slate.js"
 export type { SlateQueryResult } from "./slate.js"
 
-export { queryOntology } from "./ontology.js"
+export { executeAction, queryOntology } from "./ontology.js"
 export type {
+  ActionArguments,
+  ActionReceipt,
+  ActionReference,
+  ActionResourceRef,
+  ExecuteActionRequest,
   OntologyColumn,
   OntologyQuery,
   OntologyQueryResult
