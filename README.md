@@ -196,6 +196,40 @@ A query for data the acting principal's permissions do not cover
 receives `ontology_forbidden` (HTTP 403); a school with no ontology
 configured receives `ontology_not_configured` (HTTP 422).
 
+Submit a published ontology Action with `executeAction`. This requires an
+authenticated App deployment and a signed-in session. Staff callers provide a
+`constituentId`; constituent sessions use their own identity.
+
+```ts
+import { randomUUID } from "node:crypto"
+import { executeAction } from "@collegevine/trellis-app-sdk"
+
+const submissionId = randomUUID()
+const receipt = await executeAction({
+  action: { dataSchema: "ontology_v1", key: "app_contract_post_note" },
+  arguments: {
+    subject: "person-id",
+    params: { note: "Submitted by the app", submission: submissionId },
+    idempotencyKey: submissionId
+  },
+  constituentId: 1
+})
+
+console.log(receipt.complete, receipt.succeeded, receipt.guarantee)
+```
+
+HTTP 200 returns a receipt, even when the effect is pending or failed. Inspect
+`complete`, `succeeded`, `state`, and `guarantee`. The SDK does not retry Action
+submissions. If a submission times out or its outcome is uncertain, retry with
+the same `idempotencyKey` so the server can deduplicate it. API errors retain
+their HTTP status and body in `TrellisAppApiError`.
+
+With the seeded Monza fixture running locally, set `TRELLIS_E2E_ACCESS_TOKEN`
+to a valid staff `tau_` token and `TRELLIS_E2E_SUBJECT_ID` to the seeded Banner
+person ID, then run `npm run test:e2e:actions`. The test sends a fresh synthetic
+submission and checks the local Banner mock for one authenticated request after
+repeating the same idempotency key.
+
 ### LLM inference
 
 Run a single LLM inference. The app supplies a free-form message array
