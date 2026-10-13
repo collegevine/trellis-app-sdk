@@ -9,13 +9,17 @@ describe("request logging", () => {
   let logged: unknown[][]
 
   beforeEach(() => {
+    vi.stubEnv("TRELLIS_APP_AUTH_MODE", "authenticated")
     logged = []
     vi.spyOn(Logger, "info").mockImplementation((...args: unknown[]) => {
       logged.push(args)
     })
   })
 
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
 
   const leia: TrellisUser = {
     name: "Leia Organa",

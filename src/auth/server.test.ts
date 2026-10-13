@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { runWithRequest } from "../context.js"
 import {
   SESSION_COOKIE,
@@ -14,6 +14,9 @@ function requestWithCookie(value: string | null): Request {
 }
 
 describe("getTrellisUser", () => {
+  beforeEach(() => vi.stubEnv("TRELLIS_APP_AUTH_MODE", "authenticated"))
+  afterEach(() => vi.unstubAllEnvs())
+
   it("returns the user when a live session cookie is on the request", () => {
     const session: SessionCookie = {
       accessToken: "tau_speak-friend",
@@ -39,9 +42,7 @@ describe("getTrellisUser", () => {
     })
   })
 
-  it("defaults emailHashes to [] and subjectType to null for a legacy cookie minted before the fields existed", () => {
-    // Old wire shape: a session cookie whose stored user has neither
-    // emailHashes nor subjectType.
+  it("defaults optional user fields omitted by the platform in a signed session", () => {
     const legacy = {
       accessToken: "tau_old-session",
       expiresAt: Math.floor(Date.now() / 1000) + 3600,

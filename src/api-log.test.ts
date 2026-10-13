@@ -91,6 +91,7 @@ describe("API call logging", () => {
       })
     )
     const state: StateCookie = {
+      expiresAt: Math.floor(Date.now() / 1000) + 600,
       state: "round-trip-state",
       codeVerifier: "verifier-secret",
       next: "/dashboard"
@@ -99,7 +100,7 @@ describe("API call logging", () => {
     await withAuth(async () => new Response("unreached"))(
       new Request(
         `https://falcon.tatooine.apps.collegevine.ai${CALLBACK_PATH}?code=one-time-code&state=round-trip-state`,
-        { headers: { cookie: `${STATE_COOKIE}=${encodeCookie(state)}` } }
+        { headers: { cookie: `${STATE_COOKIE}=${encodeCookie(state, STATE_COOKIE)}` } }
       )
     )
 

@@ -5,13 +5,7 @@ import {
   readAuthMode,
   readEnv
 } from "./env.js"
-import {
-  SESSION_COOKIE,
-  decodeCookie,
-  isSessionLive,
-  readCookie,
-  type SessionCookie
-} from "./auth/cookies.js"
+import { readSession } from "./auth/cookies.js"
 import { currentRequest } from "./context.js"
 import { loggedApiFetch } from "./api-log.js"
 
@@ -51,7 +45,7 @@ export interface RequestOptions {
 //     on the current request, so the API call is scoped to the signed-
 //     in user. The auth middleware is responsible for ensuring a valid
 //     session before user code runs; the SDK throws 401 if the cookie
-//     is missing or expired.
+//     is missing, invalid, or expired.
 export async function request<T>(
   path: string,
   options: RequestOptions = {}
@@ -122,16 +116,15 @@ function authorizationHeader(): string {
 // expected to redirect unauthenticated requests before they ever reach
 // user code that calls this; the 401 here is a guard against misuse.
 function readUserAccessToken(): string {
-  const raw = readCookie(currentRequest(), SESSION_COOKIE)
-  const session = decodeCookie<SessionCookie>(raw)
-  if (!isSessionLive(session)) {
+  const session = readSession(currentRequest())
+  if (!session) {
     throw new TrellisAppApiError(
       "No active Trellis user session. The middleware should redirect unauthenticated requests to login.",
       401,
       null
     )
   }
-  return session!.accessToken
+  return session.accessToken
 }
 
 function joinUrl(baseUrl: string, path: string): string {

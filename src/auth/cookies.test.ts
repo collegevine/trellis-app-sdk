@@ -51,7 +51,12 @@ describe("encodeCookie / decodeCookie", () => {
 
   it("produces a URL-safe encoding (base64url, no padding)", () => {
     const encoded = encodeCookie({ a: 1 })
-    expect(encoded).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect(encoded).toMatch(/^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/)
+  })
+
+  it.each(["", "x", "a".repeat(42), "a".repeat(44), "!".repeat(43)])("rejects malformed signatures without throwing: %s", signature => {
+    const payload = encodeCookie({ a: 1 }).split(".")[1]
+    expect(decodeCookie(`v1.${payload}.${signature}`)).toBeNull()
   })
 })
 

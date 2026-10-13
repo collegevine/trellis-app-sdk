@@ -124,7 +124,7 @@ describe("withAuth in authenticated mode", () => {
     expect(cookies[0]).toMatch(new RegExp(`^${STATE_COOKIE}=`))
 
     const stashed = decodeCookie<StateCookie>(
-      cookies[0]!.split(";")[0]!.split("=").slice(1).join("=")
+      cookies[0]!.split(";")[0]!.split("=").slice(1).join("="), STATE_COOKIE
     )!
     expect(stashed.state).toBe(location.searchParams.get("state"))
     expect(stashed.next).toBe("/dashboard?ship=falcon")
@@ -154,11 +154,12 @@ describe("withAuth in authenticated mode", () => {
     expect(missing.status).toBe(400)
 
     const mismatch: StateCookie = {
+      expiresAt: Math.floor(Date.now() / 1000) + 600,
       state: "expected-state",
       codeVerifier: "verifier",
       next: "/"
     }
-    const stateCookie = encodeCookie(mismatch)
+    const stateCookie = encodeCookie(mismatch, STATE_COOKIE)
     const mismatched = await guarded(
       request(`${CALLBACK_PATH}?code=c&state=different`, {
         cookies: { [STATE_COOKIE]: stateCookie }
@@ -194,13 +195,14 @@ describe("withAuth in authenticated mode", () => {
     vi.stubGlobal("fetch", fetchSpy)
 
     const stored: StateCookie = {
+      expiresAt: Math.floor(Date.now() / 1000) + 600,
       state: "round-trip-state",
       codeVerifier: "verifier-secret",
       next: "/dashboard"
     }
     const response = await guarded(
       request(`${CALLBACK_PATH}?code=one-time-code&state=round-trip-state`, {
-        cookies: { [STATE_COOKIE]: encodeCookie(stored) }
+        cookies: { [STATE_COOKIE]: encodeCookie(stored, STATE_COOKIE) }
       })
     )
 
@@ -253,13 +255,14 @@ describe("withAuth in authenticated mode", () => {
     )
 
     const stored: StateCookie = {
+      expiresAt: Math.floor(Date.now() / 1000) + 600,
       state: "s",
       codeVerifier: "v",
       next: "/"
     }
     const response = await guarded(
       request(`${CALLBACK_PATH}?code=c&state=s`, {
-        cookies: { [STATE_COOKIE]: encodeCookie(stored) }
+        cookies: { [STATE_COOKIE]: encodeCookie(stored, STATE_COOKIE) }
       })
     )
 

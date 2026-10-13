@@ -51,6 +51,7 @@ Authenticated-mode apps additionally get:
 | `TRELLIS_APP_AUTHORIZE_URL` | URL of the Rails authorize endpoint,   |
 |                             | with `app_id` already baked into the   |
 |                             | query string.                          |
+| `TRELLIS_APP_SESSION_SIGNING_KEY` | Dedicated session-signing key: 32 random bytes encoded as 64 hex characters. |
 
 Database-enabled apps additionally get:
 
@@ -61,8 +62,42 @@ Database-enabled apps additionally get:
 |                | Trellis RDS Proxy. The password is an IAM token the |
 |                | SDK mints per connection, so it is absent here.    |
 
-These are injected automatically into Vercel-deployed Trellis Apps;
-supply them yourself when running locally.
+The deployment platform supplies the runtime configuration; supply it yourself
+when running locally. **The new signing key requires platform provisioning
+before adopting this SDK revision.** See the migration instructions below.
+
+### Signed-session migration
+
+Authenticated deployments now require `TRELLIS_APP_SESSION_SIGNING_KEY`.
+Provision it through the platform's server-side secret configuration, using a
+cryptographically random, distinct key per app and environment. Do not reuse
+the API bearer secret, commit the key, log it, or expose it to browser code.
+All instances serving an app must share its key. Preserve it across deployments
+unless deliberately invalidating sessions. Missing or malformed keys fail closed.
+
+The SDK signs the complete session only after a successful OAuth token exchange.
+The route guard, identity accessor, and API token reader verify the same signature
+and expiry before trusting it. Login-state cookies are also signed with a separate
+purpose and a server-enforced ten-minute expiry. Unsigned cookies are never
+upgraded in place: existing sessions must sign in again and in-flight logins must
+restart. Secure, HttpOnly, SameSite=Lax cookies remain enabled.
+
+The format is `v1.<base64url JSON>.<base64url HMAC-SHA-256>`; the MAC covers the
+cookie purpose, version, and exact encoded payload. Signing prevents edits; it
+does not encrypt the token or identity. A copied, valid cookie remains replayable
+until expiry or key rotation. Logout clears the browser cookie but does not
+invalidate a previously copied cookie, and role changes are not re-fetched on
+each request. Immediate per-user revocation requires a separate server-side
+session or token-verification design.
+
+Before merging/releasing, coordinate platform key provisioning: unpinned apps
+may pick up this SDK on their next build. For rollout, provision keys, rebuild
+FAU staging with the fixed SDK revision, test normal login and rejection of
+modified role/email/token/expiry fields, then update and verify each affected
+app. Pinned apps require a dependency update; running apps do not update merely
+because this SDK is merged. Key replacement invalidates all sessions and pending
+logins for that app; coordinate it across instances. Do not roll back to an
+unsigned-cookie SDK to recover from a failed rollout.
 
 ## Authentication modes
 
@@ -88,7 +123,7 @@ export { middleware, config } from "@collegevine/trellis-app-sdk/auth/middleware
 
 The middleware:
 
-- Gates every non-static path: missing or expired session redirects
+- Gates every non-static path: missing, invalid, or expired session redirects
   to the auth flow.
 - Serves the three OAuth control paths (`login`, `callback`, `logout`)
   itself; no extra route handlers needed.

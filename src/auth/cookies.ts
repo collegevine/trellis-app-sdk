@@ -1,3 +1,8 @@
+import { createHmac, timingSafeEqual } from "node:crypto"
+import {
+  AUTH_MODE_AUTHENTICATED, ENV_SESSION_SIGNING_KEY, readAuthMode, readEnv
+} from "../env.js"
+
 // Cookie names and the on-disk shape of the values stored in them.
 // Shared by middleware (which sets/clears them) and the server-only
 // helpers in `server.ts` (which read them).
@@ -30,9 +35,7 @@ export interface TrellisUser {
 
   /**
    * Whether the signed-in subject is an HQ user, a school user, or a
-   * constituent. `null` on session cookies minted before this field existed: a
-   * browser can present an older cookie for the rest of its 14-day life after
-   * an app adopts this SDK version.
+   * constituent. `null` when the platform does not supply a subject type.
    */
   subjectType: SubjectType | null
 }
@@ -57,9 +60,7 @@ export function userFromWire(wire: WireTrellisUser): TrellisUser {
 
 // Stored in SESSION_COOKIE. The access token is the credential the
 // SDK forwards to the API on every server-side call. expiresAt is
-// Unix epoch seconds; we only use it to decide locally when to send
-// the user back through the auth flow before the API would 401
-// anyway.
+// Unix epoch seconds, covered by the signature along with the identity.
 export interface SessionCookie {
   accessToken: string
   expiresAt: number
@@ -73,20 +74,51 @@ export interface StateCookie {
   state: string
   codeVerifier: string
   next: string
+  expiresAt: number
 }
 
-export function encodeCookie(value: unknown): string {
-  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url")
+type CookiePurpose = typeof SESSION_COOKIE | typeof STATE_COOKIE
+
+function signingKey(): Buffer {
+  const key = readEnv(ENV_SESSION_SIGNING_KEY)
+  if (!/^[a-fA-F0-9]{64}$/.test(key)) {
+    throw new Error(`${ENV_SESSION_SIGNING_KEY} must be a 32-byte random key encoded as 64 hex characters`)
+  }
+  return Buffer.from(key, "hex")
 }
 
-export function decodeCookie<T>(raw: string | undefined): T | null {
+// The purpose prevents a signed login-state cookie being used as a session.
+function signature(payload: string, purpose: CookiePurpose, key: Buffer): Buffer {
+  return createHmac("sha256", key).update(`${purpose}.v1.${payload}`).digest()
+}
+
+export function encodeCookie(value: unknown, purpose: CookiePurpose = SESSION_COOKIE): string {
+  const payload = Buffer.from(JSON.stringify(value), "utf8").toString("base64url")
+  return `v1.${payload}.${signature(payload, purpose, signingKey()).toString("base64url")}`
+}
+
+export function decodeCookie<T>(raw: string | undefined, purpose: CookiePurpose = SESSION_COOKIE): T | null {
   if (!raw) return null
+  // Configuration failures must not silently become an unsigned fallback.
+  const key = signingKey()
+  const match = /^v1\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]{43})$/.exec(raw)
+  if (!match) return null
+  const payload = match[1]!
+  const supplied = Buffer.from(match[2]!, "base64url")
+  if (!timingSafeEqual(supplied, signature(payload, purpose, key))) return null
   try {
-    const json = Buffer.from(raw, "base64url").toString("utf8")
+    const json = Buffer.from(payload, "base64url").toString("utf8")
     return JSON.parse(json) as T
   } catch {
     return null
   }
+}
+
+export function readSession(request: Request): SessionCookie | null {
+  // Public deployments must ignore cookies left over from authenticated mode.
+  if (readAuthMode() !== AUTH_MODE_AUTHENTICATED) return null
+  const session = decodeCookie<SessionCookie>(readCookie(request, SESSION_COOKIE))
+  return isSessionLive(session) ? session : null
 }
 
 export function isSessionLive(session: SessionCookie | null): boolean {

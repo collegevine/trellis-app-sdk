@@ -91,14 +91,14 @@
 //          "access token" (prefix tau_, 14-day TTL) along with the user's
 //          display name.
 //
-// 5.  We store the access token + expiry + name in a "session cookie" (HttpOnly
-//     so browser JS cannot read it; Secure so it only travels over HTTPS;
-//     SameSite=Lax so other sites cannot trigger it). The state cookie is
+// 5.  We sign the access token + expiry + identity in a session cookie
+//     (HttpOnly so browser JS cannot read it; Secure so it only travels over
+//     HTTPS; SameSite=Lax limits cross-site sending). The state cookie is
 //     cleared. We redirect the browser back to the original path stashed in the
 //     state cookie at step 2.
 //
-// 6.  The user re-opens /dashboard. This time the middleware sees a valid
-//     session cookie and lets the request through. When the page's server code
+// 6.  The user re-opens /dashboard. The middleware verifies the session cookie's
+//     signature and expiry before letting it through. When the page's server code
 //     calls the Trellis App SDK, the SDK reads the access token from the cookie
 //     and sends it as a bearer token. The Trellis App API recognizes it and
 //     runs the call as the signed-in user.
@@ -150,7 +150,7 @@ import {
   STATE_MAX_AGE_SECONDS,
   decodeCookie,
   encodeCookie,
-  isSessionLive,
+  readSession,
   readCookie,
   userFromWire,
   type SessionCookie,
@@ -202,18 +202,26 @@ async function beginAuth(next: string): Promise<Response> {
   authorizeUrl.searchParams.set("state", state)
   authorizeUrl.searchParams.set("code_challenge", codeChallenge)
 
-  const stateCookie: StateCookie = { state, codeVerifier, next }
+  const stateCookie: StateCookie = {
+    state,
+    codeVerifier,
+    next,
+    expiresAt: Math.floor(Date.now() / 1000) + STATE_MAX_AGE_SECONDS
+  }
   return redirect(authorizeUrl, [
-    setCookieHeader(STATE_COOKIE, encodeCookie(stateCookie), STATE_MAX_AGE_SECONDS)
+    setCookieHeader(STATE_COOKIE, encodeCookie(stateCookie, STATE_COOKIE), STATE_MAX_AGE_SECONDS)
   ])
 }
 
 async function handleCallback(request: Request, url: URL): Promise<Response> {
   const code = url.searchParams.get("code")
   const callbackState = url.searchParams.get("state")
-  const stored = decodeCookie<StateCookie>(readCookie(request, STATE_COOKIE))
+  const stored = decodeCookie<StateCookie>(readCookie(request, STATE_COOKIE), STATE_COOKIE)
 
-  if (!code || !callbackState || !stored || stored.state !== callbackState) {
+  if (
+    !code || !callbackState || !stored || stored.state !== callbackState ||
+    !Number.isFinite(stored.expiresAt) || stored.expiresAt * 1000 <= Date.now()
+  ) {
     return new Response("invalid_state", { status: 400 })
   }
 
@@ -269,8 +277,7 @@ function handleGuard(
   url: URL,
   handler: FetchHandler
 ): Promise<Response> {
-  const session = decodeCookie<SessionCookie>(readCookie(request, SESSION_COOKIE))
-  if (isSessionLive(session)) return handler(request)
+  if (readSession(request)) return handler(request)
 
   return beginAuth(url.pathname + url.search)
 }
