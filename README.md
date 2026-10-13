@@ -35,6 +35,11 @@ Every Trellis App, regardless of mode, gets these:
 | `TRELLIS_APP_UPLOADS_MAX_BYTES` | Per-file cap, signed into each       |
 |                                 | presigned upload so S3 enforces it.  |
 | `AWS_REGION`                    | Set by the Lambda runtime.           |
+| `TRELLIS_APP_COOKIE_SIGNING_KEY`| HMAC key (64 hex chars) for signed   |
+|                                 | cookies, unique to the app.          |
+| `TRELLIS_APP_COOKIE_NAME_PREFIX`| The per-app unique prefix for cookie |
+|                                 | names, to protect from overlapping   |
+|                                 | cookies via subdomains.              |
 
 Anonymous-mode apps additionally get:
 
@@ -88,8 +93,9 @@ export { middleware, config } from "@collegevine/trellis-app-sdk/auth/middleware
 
 The middleware:
 
-- Gates every non-static path: missing or expired session redirects
-  to the auth flow.
+- Gates every non-static path: a missing, expired, edited, or unsigned
+  session cookie redirects to the auth flow. Session and sign-in state
+  cookies are signed with the app's key and verified on every request.
 - Serves the three OAuth control paths (`login`, `callback`, `logout`)
   itself; no extra route handlers needed.
 
@@ -110,12 +116,49 @@ The user shape is `{ name: string | null }`. The SDK deliberately does
 not surface user id or email to the deployed app; the API call itself
 is already scoped to the signed-in user on the server side, so the
 app does not need to identify them. `getTrellisUser()` returns `null`
-when there is no live session; in practice the middleware will have
+when there is no live, correctly signed session, and always in
+anonymous mode; in authenticated mode the middleware will have
 redirected before the page renders.
 
 A "Sign out" link is just a link to `/api/trellis-auth/logout`.
 
 ## Usage
+
+### Signed cookies
+
+Store small values the visitor must not be able to change. Values are
+signed, not encrypted: the visitor can read them, but any edit makes
+them read back as `null`. The key and cookie name prefix come from the
+platform.
+
+```ts
+import {
+  clearedCookieHeader,
+  readSignedCookie,
+  signedCookieHeader
+} from "@collegevine/trellis-app-sdk"
+
+export async function loader({ request }: { request: Request }) {
+  return { prefs: readSignedCookie<{ theme: string }>(request, "prefs") }
+}
+
+export async function action() {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: "/",
+      "Set-Cookie": signedCookieHeader({
+        name: "prefs",
+        value: { theme: "dark" },
+        maxAgeSeconds: 86400
+      })
+    }
+  })
+}
+```
+
+`clearedCookieHeader("prefs")` deletes the cookie. Names may contain
+letters, digits, `_` and `-`.
 
 ### Tinybird
 

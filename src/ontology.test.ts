@@ -8,12 +8,12 @@ import {
 } from "../src/index.js"
 import { executeAction as executeOntologyAction } from "./ontology.js"
 import {
-  encodeCookie,
   SESSION_COOKIE,
   type SessionCookie,
   type SubjectType
 } from "./auth/cookies.js"
 import { runWithRequest } from "./context.js"
+import { signedCookieHeader } from "./cookies.js"
 
 const BASE_URL = "https://api.example.com/trellis/apps/api/v1/"
 const SECRET = "tas_speak-friend-and-enter"
@@ -329,7 +329,13 @@ function withSession<T>(subjectType: SubjectType, fn: () => T): T {
     user: { name: "Test user", emailHashes: [], subjectType }
   }
   const request = new Request("https://app.example.com/", {
-    headers: { cookie: `${SESSION_COOKIE}=${encodeCookie(session)}` }
+    headers: {
+      cookie: signedCookieHeader({
+        name: SESSION_COOKIE,
+        value: session,
+        maxAgeSeconds: 600
+      }).split(";")[0]
+    }
   })
   return runWithRequest({ request }, fn)
 }

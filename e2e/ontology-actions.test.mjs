@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import { test } from "node:test"
 import * as sdk from "../dist/index.js"
-import { encodeCookie, SESSION_COOKIE } from "../dist/auth/cookies.js"
+import { SESSION_COOKIE } from "../dist/auth/cookies.js"
 import { runWithRequest } from "../dist/context.js"
 
 const API_URL =
@@ -27,6 +27,8 @@ test("the Monza Action reaches Banner once and deduplicates a repeated submissio
 
   process.env.TRELLIS_APP_API_URL = API_URL
   process.env.TRELLIS_APP_AUTH_MODE = "authenticated"
+  process.env.TRELLIS_APP_COOKIE_SIGNING_KEY ??= "ab".repeat(32)
+  process.env.TRELLIS_APP_COOKIE_NAME_PREFIX ??= "e2e"
 
   const submission = randomUUID()
   console.info(`submission=${submission}`)
@@ -45,7 +47,13 @@ test("the Monza Action reaches Banner once and deduplicates a repeated submissio
     user: { name: "Monza test staff", emailHashes: [], subjectType: "school_user" }
   }
   const request = new Request("http://localhost:3000/", {
-    headers: { cookie: `${SESSION_COOKIE}=${encodeCookie(session)}` }
+    headers: {
+      cookie: sdk.signedCookieHeader({
+        name: SESSION_COOKIE,
+        value: session,
+        maxAgeSeconds: 300
+      }).split(";")[0]
+    }
   })
 
   assert.equal((await matchingBannerRequests(submission)).length, 0)

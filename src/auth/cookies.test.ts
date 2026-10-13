@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest"
 import {
-  decodeCookie,
-  encodeCookie,
   isSessionLive,
   userFromWire,
   type SessionCookie
@@ -28,30 +26,6 @@ describe("userFromWire", () => {
       emailHashes: [],
       subjectType: null
     })
-  })
-})
-
-describe("encodeCookie / decodeCookie", () => {
-  it("roundtrips arbitrary JSON-serializable values", () => {
-    const value = {
-      accessToken: "tau_speak-friend",
-      expiresAt: 1779148800,
-      user: { name: "Frodo Baggins" }
-    }
-    expect(decodeCookie(encodeCookie(value))).toEqual(value)
-  })
-
-  it("returns null for an undefined raw value", () => {
-    expect(decodeCookie<unknown>(undefined)).toBeNull()
-  })
-
-  it("returns null for malformed payloads instead of throwing", () => {
-    expect(decodeCookie<unknown>("not-base64-or-json")).toBeNull()
-  })
-
-  it("produces a URL-safe encoding (base64url, no padding)", () => {
-    const encoded = encodeCookie({ a: 1 })
-    expect(encoded).toMatch(/^[A-Za-z0-9_-]+$/)
   })
 })
 
