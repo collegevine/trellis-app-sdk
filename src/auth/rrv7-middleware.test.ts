@@ -173,7 +173,7 @@ describe("withAuth in authenticated mode", () => {
 
     const cookies = response.headers.getSetCookie()
     expect(cookies).toHaveLength(1)
-    expect(cookies[0]).toMatch(/^__Host-App-[^=]+-trellis_auth=;/)
+    expect(cookies[0]).toMatch(/^__Host-Http-App-[^=]+-trellis_auth=;/)
     expect(cookies[0]).toContain("Max-Age=0")
   })
 
@@ -268,7 +268,7 @@ describe("withAuth in authenticated mode", () => {
       subjectType: "constituent"
     })
 
-    expect(cookies[1]).toMatch(/^__Host-App-[^=]+-trellis_auth_state=;.*Max-Age=0/)
+    expect(cookies[1]).toMatch(/^__Host-Http-App-[^=]+-trellis_auth_state=;.*Max-Age=0/)
   })
 
   it("callback surfaces a token-exchange failure as an error response", async () => {

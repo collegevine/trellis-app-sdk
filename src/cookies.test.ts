@@ -40,16 +40,16 @@ describe("signed cookies", () => {
     expect(readSignedCookie(requestWith("theme=dark"), "hold")).toBeNull()
   })
 
-  it("sets a __Host- cookie with Path=/, Secure, HttpOnly, and no Domain, and clears it the same way", () => {
+  it("sets a __Host-Http- cookie with Path=/, Secure, HttpOnly, and no Domain, and clears it the same way", () => {
     const header = signedCookieHeader({ name: "hold", value: cargo, maxAgeSeconds: 600 })
-    expect(header).toMatch(new RegExp(`^__Host-App-${PREFIX}-hold=[A-Za-z0-9_-]+; `))
+    expect(header).toMatch(new RegExp(`^__Host-Http-App-${PREFIX}-hold=[A-Za-z0-9_-]+; `))
     const attributes = header.split("; ").slice(1)
     expect(attributes).toEqual(
       expect.arrayContaining(["Path=/", "Secure", "HttpOnly", "SameSite=Lax", "Max-Age=600"])
     )
     expect(header).not.toMatch(/domain/i)
     expect(clearedCookieHeader("hold")).toBe(
-      `__Host-App-${PREFIX}-hold=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
+      `__Host-Http-App-${PREFIX}-hold=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
     )
   })
 
@@ -61,13 +61,13 @@ describe("signed cookies", () => {
   })
 
   it("rejects an unsigned base64url(JSON) cookie", () => {
-    const cookie = `__Host-App-${PREFIX}-hold=${b64(cargo)}`
+    const cookie = `__Host-Http-App-${PREFIX}-hold=${b64(cargo)}`
     expect(readSignedCookie(requestWith(cookie), "hold")).toBeNull()
   })
 
   it("does not verify a value under a different name, key, or prefix", () => {
     const value = cookiePair("trellis_auth_state", cargo).split(/=(.*)/s)[1]
-    const asSession = `__Host-App-${PREFIX}-trellis_auth=${value}`
+    const asSession = `__Host-Http-App-${PREFIX}-trellis_auth=${value}`
     expect(readSignedCookie(requestWith(asSession), "trellis_auth")).toBeNull()
 
     process.env.TRELLIS_APP_COOKIE_SIGNING_KEY = "cd".repeat(32)
@@ -78,12 +78,12 @@ describe("signed cookies", () => {
     process.env.TRELLIS_APP_COOKIE_NAME_PREFIX = "mordor"
     const otherPrefix = cookiePair("hold", cargo).split(/=(.*)/s)[1]
     process.env.TRELLIS_APP_COOKIE_NAME_PREFIX = PREFIX
-    const replanted = `__Host-App-${PREFIX}-hold=${otherPrefix}`
+    const replanted = `__Host-Http-App-${PREFIX}-hold=${otherPrefix}`
     expect(readSignedCookie(requestWith(replanted), "hold")).toBeNull()
   })
 
   it("returns null for malformed values without throwing", () => {
-    const fullName = `__Host-App-${PREFIX}-hold`
+    const fullName = `__Host-Http-App-${PREFIX}-hold`
     const payload = JSON.stringify(cargo)
     const signature = createHmac("sha256", Buffer.from(KEY, "hex"))
       .update(JSON.stringify([fullName, payload]))

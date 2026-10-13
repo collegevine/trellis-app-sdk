@@ -3,9 +3,12 @@ import { ENV_COOKIE_NAME_PREFIX, ENV_COOKIE_SIGNING_KEY } from "./env.js"
 
 // Signed cookies scoped to this app.
 //
-// The wire name is `__Host-App-<prefix>-<name>`. Browsers accept a `__Host-` cookie
-// only when it is Secure, has Path=/ and no Domain, so a sibling app under the
-// shared apps.collegevine.ai parent cannot plant one for this host.
+// The wire name is `__Host-Http-App-<prefix>-<name>`. Browsers accept a
+// `__Host-` cookie only when it is Secure, has Path=/ and no Domain, so a
+// sibling app under the shared apps.collegevine.ai parent cannot plant one for
+// this host. `__Host-Http-` further requires HttpOnly and refuses the cookie
+// from page script, so script on this host cannot plant one either. Browsers
+// that don't know `__Host-Http-` still enforce the `__Host-` rules.
 //
 // The wire value is base64url(JSON.stringify({ payload, signature })), where
 // payload is JSON.stringify(value) and signature is
@@ -33,7 +36,7 @@ function fullCookieName(name: string): string {
   }
   const prefix = process.env[ENV_COOKIE_NAME_PREFIX]
   if (!prefix) throw new Error(`${ENV_COOKIE_NAME_PREFIX} is not set`)
-  return `__Host-App-${prefix}-${name}`
+  return `__Host-Http-App-${prefix}-${name}`
 }
 
 function sign(key: Buffer, fullName: string, payload: string): Buffer {
