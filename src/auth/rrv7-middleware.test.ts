@@ -6,11 +6,10 @@ import {
   LOGOUT_PATH,
   SESSION_COOKIE,
   STATE_COOKIE,
-  decodeCookie,
-  encodeCookie,
   type SessionCookie,
   type StateCookie
 } from "./cookies.js"
+import { readSignedCookie, signedCookieHeader } from "../cookies.js"
 import { withAuth } from "./rrv7-middleware.js"
 
 const ORIGIN = "https://millennium-falcon.tatooine.apps.collegevine.ai"
@@ -35,28 +34,40 @@ function freshHandler(
 
 function request(
   path: string,
-  init: { cookies?: Record<string, string>; method?: string } = {}
+  init: { cookies?: string[]; method?: string } = {}
 ): Request {
   const headers = new Headers()
-  if (init.cookies && Object.keys(init.cookies).length > 0) {
-    const cookie = Object.entries(init.cookies)
-      .map(([k, v]) => `${k}=${v}`)
-      .join("; ")
-    headers.set("cookie", cookie)
-  }
+  if (init.cookies?.length) headers.set("cookie", init.cookies.join("; "))
   return new Request(`${ORIGIN}${path}`, {
     method: init.method ?? "GET",
     headers
   })
 }
 
-function liveSessionCookie(): string {
-  const session: SessionCookie = {
-    accessToken: "tau_use-the-force",
-    expiresAt: Math.floor(Date.now() / 1000) + 3600,
-    user: { name: "Luke Skywalker", emailHashes: [], subjectType: "school_user" }
-  }
-  return encodeCookie(session)
+// The `name=value` pair a browser would send back for a signed cookie.
+function signedPair(name: string, value: unknown): string {
+  return signedCookieHeader({ name, value, maxAgeSeconds: 600 }).split(";")[0]!
+}
+
+// Read a signed value back out of a Set-Cookie header the middleware emitted.
+function readSetCookie<T>(setCookie: string, name: string): T | null {
+  return readSignedCookie<T>(request("/", { cookies: [setCookie.split(";")[0]!] }), name)
+}
+
+const luke: SessionCookie = {
+  accessToken: "tau_use-the-force",
+  expiresAt: Math.floor(Date.now() / 1000) + 3600,
+  user: { name: "Luke Skywalker", emailHashes: [], subjectType: "school_user" }
+}
+
+function stateCookie(state: string, overrides: Partial<StateCookie> = {}): string {
+  return signedPair(STATE_COOKIE, {
+    state,
+    codeVerifier: "verifier-secret",
+    next: "/dashboard",
+    expiresAt: Math.floor(Date.now() / 1000) + 600,
+    ...overrides
+  })
 }
 
 afterEach(() => {
@@ -97,9 +108,30 @@ describe("withAuth in authenticated mode", () => {
     const { handler, spy } = freshHandler()
     const guarded = withAuth(handler)
 
-    await guarded(request("/dashboard", { cookies: { [SESSION_COOKIE]: liveSessionCookie() } }))
+    await guarded(request("/dashboard", { cookies: [signedPair(SESSION_COOKIE, luke)] }))
 
     expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it("sends a session with an edited subjectType, or an unsigned one, back through sign-in", async () => {
+    const { handler, spy } = freshHandler()
+    const guarded = withAuth(handler)
+
+    const [name, value] = signedPair(SESSION_COOKIE, luke).split(/=(.*)/s) as [string, string]
+    const envelope = JSON.parse(Buffer.from(value, "base64url").toString("utf8"))
+    envelope.payload = JSON.stringify({
+      ...luke,
+      user: { ...luke.user, subjectType: "hq_user" }
+    })
+    const tampered = `${name}=${Buffer.from(JSON.stringify(envelope)).toString("base64url")}`
+    const unsigned = `${name}=${Buffer.from(JSON.stringify(luke)).toString("base64url")}`
+
+    for (const cookie of [tampered, unsigned]) {
+      const response = await guarded(request("/dashboard", { cookies: [cookie] }))
+      expect(response.status).toBe(302)
+      expect(response.headers.get("Location")).toMatch(/^https:\/\/collegevine\.com\/oauth\/authorize/)
+    }
+    expect(spy).not.toHaveBeenCalled()
   })
 
   it("redirects guarded requests to the authorize URL when no session is present", async () => {
@@ -121,13 +153,12 @@ describe("withAuth in authenticated mode", () => {
 
     const cookies = response.headers.getSetCookie()
     expect(cookies).toHaveLength(1)
-    expect(cookies[0]).toMatch(new RegExp(`^${STATE_COOKIE}=`))
-
-    const stashed = decodeCookie<StateCookie>(
-      cookies[0]!.split(";")[0]!.split("=").slice(1).join("=")
-    )!
+    const stashed = readSetCookie<StateCookie>(cookies[0]!, STATE_COOKIE)!
     expect(stashed.state).toBe(location.searchParams.get("state"))
     expect(stashed.next).toBe("/dashboard?ship=falcon")
+    const now = Math.floor(Date.now() / 1000)
+    expect(stashed.expiresAt).toBeGreaterThanOrEqual(now + 599)
+    expect(stashed.expiresAt).toBeLessThanOrEqual(now + 600)
   })
 
   it("logout returns 200 HTML and clears the session cookie", async () => {
@@ -142,29 +173,35 @@ describe("withAuth in authenticated mode", () => {
 
     const cookies = response.headers.getSetCookie()
     expect(cookies).toHaveLength(1)
-    expect(cookies[0]).toMatch(new RegExp(`^${SESSION_COOKIE}=;`))
+    expect(cookies[0]).toMatch(/^__Host-Http-App-[^=]+-trellis_auth=;/)
     expect(cookies[0]).toContain("Max-Age=0")
   })
 
-  it("callback rejects when state cookie is missing or mismatched", async () => {
+  it("callback rejects a missing, mismatched, expired, or unsigned state cookie", async () => {
     const { handler } = freshHandler()
+    const fetchSpy = vi.fn<typeof fetch>()
+    vi.stubGlobal("fetch", fetchSpy)
     const guarded = withAuth(handler)
-
-    const missing = await guarded(request(`${CALLBACK_PATH}?code=c&state=s`))
-    expect(missing.status).toBe(400)
-
-    const mismatch: StateCookie = {
-      state: "expected-state",
-      codeVerifier: "verifier",
-      next: "/"
-    }
-    const stateCookie = encodeCookie(mismatch)
-    const mismatched = await guarded(
-      request(`${CALLBACK_PATH}?code=c&state=different`, {
-        cookies: { [STATE_COOKIE]: stateCookie }
-      })
+    const url = `${CALLBACK_PATH}?code=c&state=s`
+    const past = Math.floor(Date.now() / 1000) - 1
+    const unsigned = stateCookie("s").replace(
+      /=.*/s,
+      `=${Buffer.from(JSON.stringify({ state: "s", codeVerifier: "v", next: "/", expiresAt: past + 601 })).toString("base64url")}`
     )
-    expect(mismatched.status).toBe(400)
+
+    for (const cookies of [
+      [],
+      [stateCookie("different")],
+      [stateCookie("s", { expiresAt: past })],
+      [stateCookie("s", { expiresAt: Number.NaN })],
+      [unsigned],
+      [signedPair(SESSION_COOKIE, { state: "s", codeVerifier: "v", next: "/", expiresAt: past + 601 }).replace("_trellis_auth=", "_trellis_auth_state=")]
+    ]) {
+      const response = await guarded(request(url, { cookies }))
+      expect(response.status).toBe(400)
+      expect(await response.text()).toBe("invalid_state")
+    }
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it("callback exchanges the code, sets the session cookie, clears state, redirects to next", async () => {
@@ -193,14 +230,9 @@ describe("withAuth in authenticated mode", () => {
     )
     vi.stubGlobal("fetch", fetchSpy)
 
-    const stored: StateCookie = {
-      state: "round-trip-state",
-      codeVerifier: "verifier-secret",
-      next: "/dashboard"
-    }
     const response = await guarded(
       request(`${CALLBACK_PATH}?code=one-time-code&state=round-trip-state`, {
-        cookies: { [STATE_COOKIE]: encodeCookie(stored) }
+        cookies: [stateCookie("round-trip-state")]
       })
     )
 
@@ -223,10 +255,7 @@ describe("withAuth in authenticated mode", () => {
     const cookies = response.headers.getSetCookie()
     expect(cookies).toHaveLength(2)
 
-    const sessionCookieRaw = cookies.find((c) => c.startsWith(`${SESSION_COOKIE}=`))!
-    const sessionPayload = decodeCookie<SessionCookie>(
-      sessionCookieRaw.split(";")[0]!.split("=").slice(1).join("=")
-    )!
+    const sessionPayload = readSetCookie<SessionCookie>(cookies[0]!, SESSION_COOKIE)!
     expect(sessionPayload.accessToken).toBe("tau_kessel-run")
     // The wire object is snake_case (email_hashes, subject_type); the SDK maps
     // it to the camelCase TrellisUser (emailHashes, subjectType) at the boundary
@@ -239,8 +268,7 @@ describe("withAuth in authenticated mode", () => {
       subjectType: "constituent"
     })
 
-    const stateCleared = cookies.find((c) => c.startsWith(`${STATE_COOKIE}=`))!
-    expect(stateCleared).toContain("Max-Age=0")
+    expect(cookies[1]).toMatch(/^__Host-Http-App-[^=]+-trellis_auth_state=;.*Max-Age=0/)
   })
 
   it("callback surfaces a token-exchange failure as an error response", async () => {
@@ -252,15 +280,8 @@ describe("withAuth in authenticated mode", () => {
       vi.fn(async () => new Response("nope", { status: 401 }))
     )
 
-    const stored: StateCookie = {
-      state: "s",
-      codeVerifier: "v",
-      next: "/"
-    }
     const response = await guarded(
-      request(`${CALLBACK_PATH}?code=c&state=s`, {
-        cookies: { [STATE_COOKIE]: encodeCookie(stored) }
-      })
+      request(`${CALLBACK_PATH}?code=c&state=s`, { cookies: [stateCookie("s")] })
     )
 
     expect(response.status).toBe(401)

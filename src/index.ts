@@ -1,5 +1,11 @@
 export { TrellisAppApiError } from "./http.js"
 
+export {
+  clearedCookieHeader,
+  readSignedCookie,
+  signedCookieHeader
+} from "./cookies.js"
+
 export { queryTinybirdPipe } from "./tinybird.js"
 export type {
   TinybirdColumnMeta,

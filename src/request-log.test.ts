@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { encodeCookie, SESSION_COOKIE } from "./auth/cookies.js"
+import { SESSION_COOKIE } from "./auth/cookies.js"
+import { signedCookieHeader } from "./cookies.js"
 import type { TrellisUser } from "./auth/server.js"
 import { runWithRequest } from "./context.js"
 import { Logger } from "./logging.js"
@@ -9,13 +10,17 @@ describe("request logging", () => {
   let logged: unknown[][]
 
   beforeEach(() => {
+    process.env.TRELLIS_APP_AUTH_MODE = "authenticated"
     logged = []
     vi.spyOn(Logger, "info").mockImplementation((...args: unknown[]) => {
       logged.push(args)
     })
   })
 
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => {
+    delete process.env.TRELLIS_APP_AUTH_MODE
+    vi.restoreAllMocks()
+  })
 
   const leia: TrellisUser = {
     name: "Leia Organa",
@@ -24,12 +29,12 @@ describe("request logging", () => {
   }
 
   function signedInCookie(user: TrellisUser): string {
-    const value = encodeCookie({
+    const session = {
       accessToken: "tau_secret",
       expiresAt: Math.floor(Date.now() / 1000) + 3600,
       user
-    })
-    return `${SESSION_COOKIE}=${value}`
+    }
+    return signedCookieHeader({ name: SESSION_COOKIE, value: session, maxAgeSeconds: 3600 }).split(";")[0]!
   }
 
   it("logs path, query, client ip, and the signed-in user's identity on start", () => {

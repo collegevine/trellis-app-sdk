@@ -56,9 +56,12 @@
 //                     or browser history).
 //
 //     The original path (/dashboard) is also stashed in the same short-lived
-//     cookie so we can send the user back there at the end. The middleware then
-//     302s the browser to the Rails authorize page, passing `app_id`, `state`,
-//     and `code_challenge` as query params. The verifier never leaves the App's
+//     cookie (so we can send the user back there at the end), along with the
+//     cookie's own expiry time. Like every cookie this middleware sets, the
+//     state cookie is HMAC-signed with a per-app key (see ../cookies.ts), so
+//     the browser can read it but not edit it. The middleware then 302s the
+//     browser to the Rails authorize page, passing `app_id`, `state`, and
+//     `code_challenge` as query params. The verifier never leaves the App's
 //     cookie.
 //
 //     /api/trellis-auth/login does the same thing as this branch. It exists so
@@ -80,7 +83,8 @@
 // 4.  /api/trellis-auth/callback is handled by this middleware. We:
 //
 //       a. Read the state cookie, compare to the `state` in the URL. Reject if
-//          they do not match. b. POST { code, code_verifier } to Rails' token
+//          the cookie is missing, fails signature verification, has expired, or
+//          does not match. b. POST { code, code_verifier } to Rails' token
 //          endpoint, authenticating ourselves with TRELLIS_APP_API_SECRET. That
 //          secret is injected into this deployment's environment by Rails at
 //          deploy time and identifies us as the real backend for this app.
@@ -91,23 +95,24 @@
 //          "access token" (prefix tau_, 14-day TTL) along with the user's
 //          display name.
 //
-// 5.  We store the access token + expiry + name in a "session cookie" (HttpOnly
-//     so browser JS cannot read it; Secure so it only travels over HTTPS;
-//     SameSite=Lax so other sites cannot trigger it). The state cookie is
-//     cleared. We redirect the browser back to the original path stashed in the
-//     state cookie at step 2.
+// 5.  We store the access token + expiry + user in a signed "session cookie".
+//     The state cookie is cleared. We redirect the browser back to the original
+//     path stashed in the state cookie at step 2.
 //
 // 6.  The user re-opens /dashboard. This time the middleware sees a valid
-//     session cookie and lets the request through. When the page's server code
-//     calls the Trellis App SDK, the SDK reads the access token from the cookie
-//     and sends it as a bearer token. The Trellis App API recognizes it and
-//     runs the call as the signed-in user.
+//     session cookie (correctly signed and unexpired) and lets the request
+//     through. An edited or unsigned cookie counts as no cookie: the visitor
+//     goes back through sign-in. When the page's server code calls the Trellis
+//     App SDK, the SDK reads the access token from the cookie and sends it as a
+//     bearer token. The Trellis App API recognizes it and runs the call as the
+//     signed-in user.
 //
 // 7.  /api/trellis-auth/logout clears the session cookie and shows a "signed
-//     out, close the tab" page. We deliberately do not redirect anywhere: the
-//     user's Rails session is still live, so a redirect to / would just trip
-//     the guard and immediately re-authorize them, making sign-out look like a
-//     no-op.
+//     out" page with a "Sign back in" link to /. We deliberately do not
+//     redirect anywhere: the user's Rails session is still live, so a redirect
+//     to / would just trip the guard and immediately re-authorize them, making
+//     sign-out look like a no-op. Following the link does exactly that, but
+//     only when the user asks for it.
 //
 // ---------------------------------------------------------------------
 // Anonymous mode
@@ -148,15 +153,17 @@ import {
   SESSION_MAX_AGE_SECONDS,
   STATE_COOKIE,
   STATE_MAX_AGE_SECONDS,
-  decodeCookie,
-  encodeCookie,
-  isSessionLive,
-  readCookie,
+  readSession,
   userFromWire,
   type SessionCookie,
   type StateCookie,
   type WireTrellisUser
 } from "./cookies.js"
+import {
+  clearedCookieHeader,
+  readSignedCookie,
+  signedCookieHeader
+} from "../cookies.js"
 
 // Wrap an RRv7 request handler in the Trellis auth layer. The returned
 // handler short-circuits the three control paths, gates everything
@@ -202,18 +209,34 @@ async function beginAuth(next: string): Promise<Response> {
   authorizeUrl.searchParams.set("state", state)
   authorizeUrl.searchParams.set("code_challenge", codeChallenge)
 
-  const stateCookie: StateCookie = { state, codeVerifier, next }
+  const stateCookie: StateCookie = {
+    state,
+    codeVerifier,
+    next,
+    expiresAt: Math.floor(Date.now() / 1000) + STATE_MAX_AGE_SECONDS
+  }
   return redirect(authorizeUrl, [
-    setCookieHeader(STATE_COOKIE, encodeCookie(stateCookie), STATE_MAX_AGE_SECONDS)
+    signedCookieHeader({
+      name: STATE_COOKIE,
+      value: stateCookie,
+      maxAgeSeconds: STATE_MAX_AGE_SECONDS
+    })
   ])
 }
 
 async function handleCallback(request: Request, url: URL): Promise<Response> {
   const code = url.searchParams.get("code")
   const callbackState = url.searchParams.get("state")
-  const stored = decodeCookie<StateCookie>(readCookie(request, STATE_COOKIE))
+  const stored = readSignedCookie<StateCookie>(request, STATE_COOKIE)
 
-  if (!code || !callbackState || !stored || stored.state !== callbackState) {
+  if (
+    !code ||
+    !callbackState ||
+    !stored ||
+    stored.state !== callbackState ||
+    !Number.isFinite(stored.expiresAt) ||
+    stored.expiresAt * 1000 <= Date.now()
+  ) {
     return new Response("invalid_state", { status: 400 })
   }
 
@@ -227,22 +250,23 @@ async function handleCallback(request: Request, url: URL): Promise<Response> {
 
   const target = new URL(stored.next, url.origin)
   return redirect(target, [
-    setCookieHeader(
-      SESSION_COOKIE,
-      encodeCookie(exchanged),
-      SESSION_MAX_AGE_SECONDS
-    ),
-    deleteCookieHeader(STATE_COOKIE)
+    signedCookieHeader({
+      name: SESSION_COOKIE,
+      value: exchanged,
+      maxAgeSeconds: SESSION_MAX_AGE_SECONDS
+    }),
+    clearedCookieHeader(STATE_COOKIE)
   ])
 }
 
 // Sign-out is purely local to the App: clear the session cookie and
-// render a terminal page that does not navigate anywhere. We cannot
+// render a page that does not navigate anywhere on its own. We cannot
 // redirect to "/" because the user's Rails session is still live, so
-// the guard would immediately re-authorize them.
+// the guard would immediately re-authorize them. The page links to "/"
+// instead, so signing back in is the user's choice.
 function handleLogout(): Response {
   const headers = new Headers({ "Content-Type": "text/html; charset=utf-8" })
-  headers.append("Set-Cookie", deleteCookieHeader(SESSION_COOKIE))
+  headers.append("Set-Cookie", clearedCookieHeader(SESSION_COOKIE))
   return new Response(SIGNED_OUT_PAGE, { status: 200, headers })
 }
 
@@ -260,6 +284,7 @@ const SIGNED_OUT_PAGE = `<!doctype html>
   <body>
     <h1>Signed out</h1>
     <p>You have been signed out. You can close this tab.</p>
+    <p><a href="/">Sign back in</a></p>
   </body>
 </html>
 `
@@ -269,8 +294,7 @@ function handleGuard(
   url: URL,
   handler: FetchHandler
 ): Promise<Response> {
-  const session = decodeCookie<SessionCookie>(readCookie(request, SESSION_COOKIE))
-  if (isSessionLive(session)) return handler(request)
+  if (readSession(request)) return handler(request)
 
   return beginAuth(url.pathname + url.search)
 }
@@ -333,14 +357,6 @@ function redirect(location: URL | string, setCookies: string[]): Response {
   const headers = new Headers({ Location: location.toString() })
   for (const value of setCookies) headers.append("Set-Cookie", value)
   return new Response(null, { status: 302, headers })
-}
-
-function setCookieHeader(name: string, value: string, maxAgeSeconds: number): string {
-  return `${name}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`
-}
-
-function deleteCookieHeader(name: string): string {
-  return `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
 }
 
 // Restrict `next` to a same-origin path. Anything else (absolute URL,

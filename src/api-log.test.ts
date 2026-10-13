@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { queryTinybirdPipe, TrellisAppApiError } from "./index.js"
 import { Logger } from "./logging.js"
 import { withAuth } from "./auth/rrv7-middleware.js"
-import { CALLBACK_PATH, STATE_COOKIE, encodeCookie, type StateCookie } from "./auth/cookies.js"
+import { CALLBACK_PATH, STATE_COOKIE, type StateCookie } from "./auth/cookies.js"
+import { signedCookieHeader } from "./cookies.js"
 
 const BASE_URL = "https://api.example.com/trellis/apps/api/v1/"
 const SECRET = "tas_speak-friend-and-enter"
@@ -93,13 +94,22 @@ describe("API call logging", () => {
     const state: StateCookie = {
       state: "round-trip-state",
       codeVerifier: "verifier-secret",
-      next: "/dashboard"
+      next: "/dashboard",
+      expiresAt: Math.floor(Date.now() / 1000) + 600
     }
 
     await withAuth(async () => new Response("unreached"))(
       new Request(
         `https://falcon.tatooine.apps.collegevine.ai${CALLBACK_PATH}?code=one-time-code&state=round-trip-state`,
-        { headers: { cookie: `${STATE_COOKIE}=${encodeCookie(state)}` } }
+        {
+          headers: {
+            cookie: signedCookieHeader({
+              name: STATE_COOKIE,
+              value: state,
+              maxAgeSeconds: 600
+            }).split(";")[0]
+          }
+        }
       )
     )
 

@@ -1,9 +1,12 @@
-// Cookie names and the on-disk shape of the values stored in them.
-// Shared by middleware (which sets/clears them) and the server-only
-// helpers in `server.ts` (which read them).
+import { AUTH_MODE_AUTHENTICATED, readAuthMode } from "../env.js"
+import { readSignedCookie } from "../cookies.js"
 
-export const SESSION_COOKIE = "__trellis_auth"
-export const STATE_COOKIE = "__trellis_auth_state"
+// Short cookie names and the shape of the values stored in them. Both are
+// signed cookies (see ../cookies.ts). Shared by the middleware (which sets and
+// clears them) and the server-only helpers (which read them).
+
+export const SESSION_COOKIE = "trellis_auth"
+export const STATE_COOKIE = "trellis_auth_state"
 
 export const SESSION_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
 export const STATE_MAX_AGE_SECONDS = 10 * 60
@@ -30,9 +33,7 @@ export interface TrellisUser {
 
   /**
    * Whether the signed-in subject is an HQ user, a school user, or a
-   * constituent. `null` on session cookies minted before this field existed: a
-   * browser can present an older cookie for the rest of its 14-day life after
-   * an app adopts this SDK version.
+   * constituent. `null` when the platform did not report one.
    */
   subjectType: SubjectType | null
 }
@@ -66,27 +67,15 @@ export interface SessionCookie {
   user: TrellisUser
 }
 
-// Stored in STATE_COOKIE during the redirect round-trip. Lives just
-// long enough to verify the callback's `state` and finish the PKCE
-// exchange; cleared on the way out.
+// Stored in STATE_COOKIE during the OAuth redirect round-trip. Lives just long
+// enough to verify the callback's `state` and finish the PKCE exchange; cleared
+// on the way out. expiresAt (Unix epoch seconds) is part of signed payload, so
+// a replay attack is rejected.
 export interface StateCookie {
   state: string
   codeVerifier: string
   next: string
-}
-
-export function encodeCookie(value: unknown): string {
-  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url")
-}
-
-export function decodeCookie<T>(raw: string | undefined): T | null {
-  if (!raw) return null
-  try {
-    const json = Buffer.from(raw, "base64url").toString("utf8")
-    return JSON.parse(json) as T
-  } catch {
-    return null
-  }
+  expiresAt: number
 }
 
 export function isSessionLive(session: SessionCookie | null): boolean {
@@ -95,18 +84,9 @@ export function isSessionLive(session: SessionCookie | null): boolean {
   return session.expiresAt * 1000 > Date.now()
 }
 
-// Pluck a single cookie value off a Request. Returns undefined when
-// the Cookie header is missing or the named cookie is not present.
-//
-// We split on `=` and rejoin the tail because JS's `String#split(sep,
-// limit)` truncates extras rather than putting the remainder into the
-// last element, which would silently corrupt any value containing `=`.
-export function readCookie(request: Request, name: string): string | undefined {
-  const header = request.headers.get("cookie")
-  if (!header) return undefined
-  for (const part of header.split(";")) {
-    const [k, ...v] = part.trim().split("=")
-    if (k === name) return v.join("=")
-  }
-  return undefined
+// The live session attached to `request`, or null. Always null in anonymous mode.
+export function readSession(request: Request): SessionCookie | null {
+  if (readAuthMode() !== AUTH_MODE_AUTHENTICATED) return null
+  const session = readSignedCookie<SessionCookie>(request, SESSION_COOKIE)
+  return isSessionLive(session) ? session : null
 }
