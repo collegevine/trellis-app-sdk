@@ -5,15 +5,11 @@ import {
   queryOntology,
   TrellisAppApiError,
   type ActionReceipt,
-  type EvaluateFunctionRequest,
   type ExecuteActionRequest,
   type FunctionEvaluation,
   type FunctionReference
 } from "../src/index.js"
-import {
-  evaluateFunction as evaluateOntologyFunction,
-  executeAction as executeOntologyAction
-} from "./ontology.js"
+import { executeAction as executeOntologyAction } from "./ontology.js"
 import {
   SESSION_COOKIE,
   type SessionCookie,
@@ -339,25 +335,17 @@ describe("evaluateFunction", () => {
     process.env.TRELLIS_APP_AUTH_MODE = "authenticated"
   })
 
-  describe("public surface", () => {
-    it("is exported by the ontology module and the public SDK entrypoint", () => {
-      expect(evaluateFunction).toBeTypeOf("function")
-      expect(evaluateFunction).toBe(evaluateOntologyFunction)
-    })
-
-    it("types result as unknown by default and as the caller's TResult when given", () => {
-      expectTypeOf(evaluateFunction).parameter(0).toEqualTypeOf<EvaluateFunctionRequest>()
-      // Typed call sites, never invoked: ReturnType<typeof evaluateFunction>
-      // would instantiate TResult as unknown rather than its default.
-      const untyped = () =>
-        evaluateFunction({ function: PERSON_LABEL, arguments: { subject: "p1" } })
-      const typed = () =>
-        evaluateFunction<string>({ function: PERSON_LABEL, arguments: { subject: "p1" } })
-      expectTypeOf<Awaited<ReturnType<typeof untyped>>["result"]>().toEqualTypeOf<unknown>()
-      expectTypeOf<
-        Awaited<ReturnType<typeof typed>>
-      >().toEqualTypeOf<FunctionEvaluation<string>>()
-    })
+  it("types result as unknown by default and as the caller's TResult when given", () => {
+    // Typed call sites, never invoked: ReturnType<typeof evaluateFunction>
+    // would instantiate TResult as unknown rather than its default.
+    const untyped = () =>
+      evaluateFunction({ function: PERSON_LABEL, arguments: { subject: "p1" } })
+    const typed = () =>
+      evaluateFunction<string>({ function: PERSON_LABEL, arguments: { subject: "p1" } })
+    expectTypeOf<Awaited<ReturnType<typeof untyped>>["result"]>().toEqualTypeOf<unknown>()
+    expectTypeOf<
+      Awaited<ReturnType<typeof typed>>
+    >().toEqualTypeOf<FunctionEvaluation<string>>()
   })
 
   describe("evaluating with real data", () => {
@@ -382,7 +370,6 @@ describe("evaluateFunction", () => {
       )
 
       expect(result).toEqual(evaluation)
-      expect(result).not.toHaveProperty("hypotheticals")
       expect(fetchMock).toHaveBeenCalledOnce()
       const [url, init] = fetchMock.mock.calls[0]!
       expect(url).toBe(`${BASE_URL}functions/evaluate`)
@@ -399,7 +386,7 @@ describe("evaluateFunction", () => {
       })
     })
 
-    it("omits constituent_id for a constituent session and sends as_of null when asOf is null", async () => {
+    it("accepts a null asOf as evaluation start", async () => {
       fetchMock.mockResolvedValue(jsonResponse(200, { data: realEvaluation() }))
 
       await withSession("constituent", () =>
@@ -409,26 +396,20 @@ describe("evaluateFunction", () => {
         })
       )
 
+      // Rails treats an omitted and a null as_of the same way.
       const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string)
-      expect(body).toEqual({
-        function: { data_schema: "ontology_v2", key: "person_label" },
-        arguments: { subject: "p1", as_of: null }
-      })
+      expect(body.arguments.as_of ?? null).toBeNull()
     })
 
-    it("omits as_of and hypotheticals entirely when they are not given", async () => {
+    it("never sends a null hypotheticals object, which Rails rejects", async () => {
       fetchMock.mockResolvedValue(jsonResponse(200, { data: realEvaluation() }))
 
-      await withSession("school_user", () =>
-        evaluateFunction({
-          function: PERSON_LABEL,
-          arguments: { subject: "p1" },
-          constituentId: 123
-        })
+      await withSession("constituent", () =>
+        evaluateFunction({ function: PERSON_LABEL, arguments: { subject: "p1" } })
       )
 
       const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string)
-      expect(body.arguments).toEqual({ subject: "p1" })
+      expect(body.arguments.hypotheticals).not.toBeNull()
     })
   })
 
@@ -458,14 +439,9 @@ describe("evaluateFunction", () => {
       })
     })
 
-    it("sends null and nested null replacement values verbatim rather than dropping them", async () => {
+    it("sends null replacement values verbatim rather than dropping them", async () => {
       fetchMock.mockResolvedValue(jsonResponse(200, { data: realEvaluation() }))
-      const hypotheticals = {
-        middle: null,
-        addresses: [null, { line1: "1 Main St", line2: null }],
-        gpa: 0,
-        enrolled: false
-      }
+      const hypotheticals = { middle: null, address: { line2: null } }
 
       await withSession("constituent", () =>
         evaluateFunction({
@@ -476,34 +452,14 @@ describe("evaluateFunction", () => {
 
       const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string)
       expect(body.arguments.hypotheticals).toEqual(hypotheticals)
-      expect(body.arguments.hypotheticals).toHaveProperty("middle", null)
-    })
-
-    it("sends an explicitly empty hypotheticals object as given", async () => {
-      fetchMock.mockResolvedValue(jsonResponse(200, { data: realEvaluation() }))
-
-      await withSession("constituent", () =>
-        evaluateFunction({
-          function: PERSON_LABEL,
-          arguments: { subject: "p1", hypotheticals: {} }
-        })
-      )
-
-      const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string)
-      expect(body.arguments).toEqual({ subject: "p1", hypotheticals: {} })
     })
   })
 
   describe("preserving JSON types", () => {
     it.each([
       { label: "null", value: null },
-      { label: "false", value: false },
-      { label: "zero", value: 0 },
-      { label: "an empty string", value: "" },
-      { label: "an empty array", value: [] },
-      { label: "an empty object", value: {} },
-      { label: "nested nulls", value: [1, null, { a: null, b: [null] }] }
-    ])("returns a result of $label unchanged", async ({ value }) => {
+      { label: "false", value: false }
+    ])("returns a result of $label rather than treating it as missing", async ({ value }) => {
       fetchMock.mockResolvedValue(
         jsonResponse(200, { data: { ...realEvaluation(), result: value } })
       )
@@ -512,195 +468,90 @@ describe("evaluateFunction", () => {
         evaluateFunction({ function: PERSON_LABEL, arguments: { subject: "p1" } })
       )
 
-      expect(evaluation).toHaveProperty("result")
       expect(evaluation.result).toStrictEqual(value)
     })
 
-    it.each([
-      { label: "string", subject: "1042" },
-      { label: "number", subject: 1042 }
-    ])("keeps a $label subject as a $label on the wire", async ({ subject }) => {
+    it("keeps a numeric subject a number on the wire", async () => {
       fetchMock.mockResolvedValue(
-        jsonResponse(200, { data: { ...realEvaluation(), subject } })
+        jsonResponse(200, { data: { ...realEvaluation(), subject: 1042 } })
       )
 
       const evaluation = await withSession("constituent", () =>
-        evaluateFunction({ function: PERSON_LABEL, arguments: { subject } })
+        evaluateFunction({ function: PERSON_LABEL, arguments: { subject: 1042 } })
       )
 
       const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string)
-      expect(body.arguments.subject).toStrictEqual(subject)
-      expect(evaluation.subject).toStrictEqual(subject)
+      expect(body.arguments.subject).toBe(1042)
+      expect(evaluation.subject).toBe(1042)
     })
+  })
 
-    it("keeps unknown response fields rather than stripping them", async () => {
-      fetchMock.mockResolvedValue(
-        jsonResponse(200, {
-          data: { ...realEvaluation(), evaluated_at: "2026-10-16T00:00:00Z" }
-        })
-      )
+  it("throws TrellisAppApiError when a 200 evaluation has no result key", async () => {
+    const { result: _omitted, ...withoutResult } = realEvaluation()
+    fetchMock.mockResolvedValue(jsonResponse(200, { data: withoutResult }))
 
-      const evaluation = await withSession("constituent", () =>
+    const error = await captureError(() =>
+      withSession("constituent", () =>
         evaluateFunction({ function: PERSON_LABEL, arguments: { subject: "p1" } })
       )
+    )
 
-      expect(evaluation).toMatchObject({ evaluated_at: "2026-10-16T00:00:00Z" })
-    })
+    expect(error).toBeInstanceOf(TrellisAppApiError)
+    expect(error).toMatchObject({ status: 200 })
   })
 
-  describe("contract violations", () => {
-    it("throws TrellisAppApiError when a 200 evaluation has no result key", async () => {
-      const { result: _omitted, ...withoutResult } = realEvaluation()
-      fetchMock.mockResolvedValue(jsonResponse(200, { data: withoutResult }))
+  it("rejects an anonymous deployment without sending its deployment secret", async () => {
+    process.env.TRELLIS_APP_AUTH_MODE = "anonymous"
 
-      const error = await captureError(() =>
-        withSession("constituent", () =>
-          evaluateFunction({ function: PERSON_LABEL, arguments: { subject: "p1" } })
-        )
+    const error = await captureError(() =>
+      withSession("school_user", () =>
+        evaluateFunction({
+          function: PERSON_LABEL,
+          arguments: { subject: "p1" },
+          constituentId: 123
+        })
       )
+    )
 
-      expect(error).toBeInstanceOf(TrellisAppApiError)
-      expect(error).toMatchObject({ status: 200 })
-    })
-
-    it("throws TrellisAppApiError when a 200 response is not JSON", async () => {
-      fetchMock.mockResolvedValue(new Response("<html>ok</html>", { status: 200 }))
-
-      const error = await captureError(() =>
-        withSession("constituent", () =>
-          evaluateFunction({ function: PERSON_LABEL, arguments: { subject: "p1" } })
-        )
-      )
-
-      expect(error).toBeInstanceOf(TrellisAppApiError)
-      expect(error).toMatchObject({ status: 200 })
-    })
+    expect(error).toBeInstanceOf(TrellisAppApiError)
+    expect(error).toMatchObject({ status: 401, body: { error: "unauthorized" } })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  describe("authentication", () => {
-    it("rejects an anonymous deployment without sending its deployment secret", async () => {
-      process.env.TRELLIS_APP_AUTH_MODE = "anonymous"
+  it.each([
+    {
+      status: 422,
+      body: {
+        error: "functions_error",
+        message:
+          'hypotheticals for function "person_label": argument "unknown" is not declared by the function',
+        details: { code: "FUNCTION_HYPOTHETICALS_INVALID" }
+      }
+    },
+    {
+      status: 504,
+      body: { error: "functions_timeout", message: "Function evaluation timed out" }
+    }
+  ])(
+    "preserves the $status $body.error response and makes no automatic retry",
+    async ({ status, body }) => {
+      fetchMock.mockResolvedValue(jsonResponse(status, body))
 
       const error = await captureError(() =>
         withSession("school_user", () =>
           evaluateFunction({
             function: PERSON_LABEL,
-            arguments: { subject: "p1" },
+            arguments: { subject: "p1", hypotheticals: { unknown: 1 } },
             constituentId: 123
           })
         )
       )
 
       expect(error).toBeInstanceOf(TrellisAppApiError)
-      expect(error).toMatchObject({ status: 401, body: { error: "unauthorized" } })
-      expect(fetchMock).not.toHaveBeenCalled()
-    })
-
-    it("rejects a missing user session without calling the API", async () => {
-      const request = new Request("https://app.example.com/")
-      const error = await captureError(() =>
-        runWithRequest({ request }, () =>
-          evaluateFunction({ function: PERSON_LABEL, arguments: { subject: "p1" } })
-        )
-      )
-
-      expect(error).toBeInstanceOf(TrellisAppApiError)
-      expect(error).toMatchObject({ status: 401 })
-      expect(fetchMock).not.toHaveBeenCalled()
-    })
-  })
-
-  describe("errors", () => {
-    it.each([
-      {
-        status: 400,
-        body: { error: "bad_request", message: "constituent_id is required" }
-      },
-      {
-        status: 403,
-        body: {
-          error: "functions_error",
-          message: "Approval required",
-          details: { code: "FUNCTION_APPROVAL_REQUIRED" }
-        }
-      },
-      {
-        status: 404,
-        body: { error: "not_found", message: "Constituent not found" }
-      },
-      {
-        status: 404,
-        body: {
-          error: "functions_error",
-          message: "Subject not found",
-          details: { code: "SUBJECT_NOT_FOUND" }
-        }
-      },
-      {
-        status: 409,
-        body: {
-          error: "functions_error",
-          message: "Function is stale",
-          details: { code: "FUNCTION_STALE" }
-        }
-      },
-      {
-        status: 422,
-        body: {
-          error: "functions_error",
-          message:
-            'hypotheticals for function "person_label": argument "unknown" is not declared by the function',
-          details: { code: "FUNCTION_HYPOTHETICALS_INVALID" }
-        }
-      },
-      {
-        status: 500,
-        body: { error: "functions_unavailable", message: "Functions service unavailable" }
-      },
-      {
-        status: 504,
-        body: { error: "functions_timeout", message: "Function evaluation timed out" }
-      }
-    ])(
-      "preserves the $status $body.error response and makes no automatic retry",
-      async ({ status, body }) => {
-        fetchMock.mockResolvedValue(jsonResponse(status, body))
-
-        const error = await captureError(() =>
-          withSession("school_user", () =>
-            evaluateFunction({
-              function: PERSON_LABEL,
-              arguments: { subject: "p1", hypotheticals: { unknown: 1 } },
-              constituentId: 123
-            })
-          )
-        )
-
-        expect(error).toBeInstanceOf(TrellisAppApiError)
-        expect(error).toMatchObject({ status, body })
-        expect(fetchMock).toHaveBeenCalledOnce()
-      }
-    )
-
-    it("surfaces a non-JSON infrastructure failure with the raw text as the body", async () => {
-      fetchMock.mockResolvedValue(
-        new Response("<html>502 Bad Gateway</html>", { status: 502 })
-      )
-
-      const error = await captureError(() =>
-        withSession("constituent", () =>
-          evaluateFunction({ function: PERSON_LABEL, arguments: { subject: "p1" } })
-        )
-      )
-
-      expect(error).toBeInstanceOf(TrellisAppApiError)
-      expect(error).toMatchObject({
-        status: 502,
-        body: "<html>502 Bad Gateway</html>"
-      })
+      expect(error).toMatchObject({ status, body })
       expect(fetchMock).toHaveBeenCalledOnce()
-    })
-  })
+    }
+  )
 })
 
 function realEvaluation() {

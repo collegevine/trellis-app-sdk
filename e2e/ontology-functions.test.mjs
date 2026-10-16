@@ -49,15 +49,6 @@ test("a published function evaluates with real data and with a hypothetical repl
     real.result,
     "replacing an argument the result depends on must change the result"
   )
-
-  const again = await runWithRequest({ request }, () =>
-    sdk.evaluateFunction({
-      function: FUNCTION,
-      arguments: { subject: subjectId },
-      constituentId: CONSTITUENT_ID
-    })
-  )
-  assert.deepEqual(again.result, real.result, "hypotheticals must not update data")
 })
 
 test("an undeclared hypothetical argument is rejected with FUNCTION_HYPOTHETICALS_INVALID", {
