@@ -30,7 +30,7 @@ export class TrellisAppApiError extends Error {
 }
 
 export interface RequestOptions {
-  method?: "GET" | "POST"
+  method?: "GET" | "POST" | "DELETE"
   // When set, JSON-encoded into the request body and Content-Type is set.
   body?: unknown
 }
@@ -67,18 +67,19 @@ export async function request<T>(
   return unwrapResponse<T>(response)
 }
 
-// Calls the Trellis App API at `path` with a raw binary body (not JSON),
-// used for file uploads. Same auth, envelope unwrapping, and error handling
-// as `request`; the caller supplies the Content-Type.
+// Calls the Trellis App API at `path` with a raw file body (not JSON), used
+// for file uploads and exports. Same auth, envelope unwrapping, and error
+// handling as `request`; the caller supplies the Content-Type.
 export async function requestRaw<T>(
   path: string,
-  body: Uint8Array,
-  contentType: string
+  body: Uint8Array | string,
+  contentType: string,
+  method: "POST" | "PUT" = "POST"
 ): Promise<T> {
   const baseUrl = readEnv(ENV_TRELLIS_APP_API_URL)
 
   const response = await loggedApiFetch(joinUrl(baseUrl, path), {
-    method: "POST",
+    method,
     headers: {
       Authorization: authorizationHeader(),
       Accept: "application/json",
