@@ -3,6 +3,7 @@ import { TrellisAppApiError, request } from "./http.js"
 
 const ONTOLOGY_PATH = "ontology/query"
 const ACTIONS_EXECUTE_PATH = "actions/execute"
+const FUNCTIONS_EVALUATE_PATH = "functions/evaluate"
 
 /** A column in an {@link OntologyQueryResult}: its name and Databricks SQL type. */
 export interface OntologyColumn {
@@ -206,4 +207,130 @@ export async function executeAction(
       ...(constituentId === undefined ? {} : { constituent_id: constituentId })
     }
   })
+}
+
+/** Any JSON value. Used for hypothetical replacements, which are sent as JSON. */
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | JsonValue[]
+  | { [key: string]: JsonValue }
+
+/** Identifies a published function within a data schema. */
+export interface FunctionReference {
+  dataSchema: string
+  key: string
+}
+
+/** Evaluation inputs for {@link evaluateFunction}. */
+export interface FunctionArguments {
+  /** The function's subject entity key; independent of the Rails constituent ID. */
+  subject: string | number
+  /**
+   * Replacement values keyed by the function's own argument names, not ontology
+   * property names. An explicit `null` requires a nullable argument.
+   */
+  hypotheticals?: Record<string, JsonValue>
+  /**
+   * Instant fed to the function's evaluation-clock arguments; defaults to now.
+   * It does not select historical data.
+   */
+  asOf?: Date | null
+}
+
+/** Arguments to {@link evaluateFunction}. */
+export interface EvaluateFunctionRequest {
+  function: FunctionReference
+  arguments: FunctionArguments
+  /** Required for staff tokens; constituent tokens identify the constituent. */
+  constituentId?: number
+}
+
+/** Result of {@link evaluateFunction}. */
+export interface FunctionEvaluation<TResult = unknown> {
+  function: string
+  /** Active revision used for this evaluation. */
+  rev: number
+  subject: string | number
+  hypotheticals?: Record<string, JsonValue>
+  result: TResult
+}
+
+/**
+ * Evaluate a published ontology function for the current App user, optionally
+ * replacing some of its arguments with hypothetical values. Server-only.
+ * Requires an authenticated deployment and a signed-in session.
+ *
+ * Hypotheticals apply only to this evaluation and never update data, so a
+ * failed call is safe to retry; a repeat may see newer data or a newly
+ * activated revision.
+ *
+ * @typeParam TResult - The expected shape of `result`; not checked at runtime.
+ * @param evaluation - The function to evaluate, its subject and optional
+ * hypotheticals, and the constituent for staff sessions.
+ * @throws {@link TrellisAppApiError} whose `body.error` is one of:
+ * `bad_request` (400, malformed request, or a staff session without
+ * `constituentId`), `unauthorized` (401, anonymous deployment or rejected
+ * token), `not_found` (404, constituent not in the App's school),
+ * `functions_error` (400, 403, 404, 409, or 422), `functions_unavailable`
+ * (500), `functions_timeout` (504). For `functions_error`, `body.details.code`
+ * carries the reason, e.g. `FUNCTION_HYPOTHETICALS_INVALID` (422, a
+ * hypothetical names an undeclared argument or has the wrong type),
+ * `FUNCTION_APPROVAL_REQUIRED` (403), or `SUBJECT_NOT_FOUND` (404, missing or
+ * hidden from the App). A request with no session cookie throws 401 with a
+ * null `body`.
+ *
+ * @example
+ * ```ts
+ * const { result } = await evaluateFunction<string>({
+ *   function: { dataSchema: "ontology_v2", key: "person_label" },
+ *   arguments: { subject: "p1", hypotheticals: { first: "Hypothetical" } },
+ *   constituentId: 123
+ * })
+ * ```
+ */
+export async function evaluateFunction<TResult = unknown>(
+  evaluation: EvaluateFunctionRequest
+): Promise<FunctionEvaluation<TResult>> {
+  if (readAuthMode() !== AUTH_MODE_AUTHENTICATED) {
+    throw new TrellisAppApiError(
+      "Function evaluation requires an authenticated Trellis App session",
+      401,
+      {
+        error: "unauthorized",
+        message: "Function evaluation requires an authenticated Trellis App session"
+      }
+    )
+  }
+
+  const { function: fn, arguments: args, constituentId } = evaluation
+  const { subject, hypotheticals, asOf } = args
+  const data = await request<FunctionEvaluation<TResult>>(
+    FUNCTIONS_EVALUATE_PATH,
+    {
+      method: "POST",
+      body: {
+        function: { data_schema: fn.dataSchema, key: fn.key },
+        arguments: {
+          subject,
+          ...(hypotheticals === undefined ? {} : { hypotheticals }),
+          ...(asOf === undefined
+            ? {}
+            : { as_of: asOf === null ? null : asOf.toISOString() })
+        },
+        ...(constituentId === undefined ? {} : { constituent_id: constituentId })
+      }
+    }
+  )
+
+  if (typeof data !== "object" || data === null || !("result" in data)) {
+    throw new TrellisAppApiError(
+      "Trellis App API returned a function evaluation without a result",
+      200,
+      data
+    )
+  }
+  return data
 }
