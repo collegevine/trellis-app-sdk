@@ -46,6 +46,7 @@
     "docs": "node scripts/build-docs.mjs",
     "test": "vitest run",
     "test:e2e:actions": "npm run build && node --test e2e/ontology-actions.test.mjs",
+    "test:e2e:functions": "npm run build && node --test e2e/ontology-functions.test.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
