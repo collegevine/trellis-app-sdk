@@ -8,8 +8,7 @@ import {
   type EvaluateFunctionRequest,
   type ExecuteActionRequest,
   type FunctionEvaluation,
-  type FunctionReference,
-  type JsonValue
+  type FunctionReference
 } from "../src/index.js"
 import {
   evaluateFunction as evaluateOntologyFunction,
@@ -346,12 +345,18 @@ describe("evaluateFunction", () => {
       expect(evaluateFunction).toBe(evaluateOntologyFunction)
     })
 
-    it("types result as JsonValue by default and as the caller's TResult when given", () => {
+    it("types result as unknown by default and as the caller's TResult when given", () => {
       expectTypeOf(evaluateFunction).parameter(0).toEqualTypeOf<EvaluateFunctionRequest>()
+      // Typed call sites, never invoked: ReturnType<typeof evaluateFunction>
+      // would instantiate TResult as unknown rather than its default.
+      const untyped = () =>
+        evaluateFunction({ function: PERSON_LABEL, arguments: { subject: "p1" } })
+      const typed = () =>
+        evaluateFunction<string>({ function: PERSON_LABEL, arguments: { subject: "p1" } })
+      expectTypeOf<Awaited<ReturnType<typeof untyped>>["result"]>().toEqualTypeOf<unknown>()
       expectTypeOf<
-        Awaited<ReturnType<typeof evaluateFunction>>["result"]
-      >().toEqualTypeOf<JsonValue>()
-      expectTypeOf<FunctionEvaluation<string>["result"]>().toEqualTypeOf<string>()
+        Awaited<ReturnType<typeof typed>>
+      >().toEqualTypeOf<FunctionEvaluation<string>>()
     })
   })
 
@@ -703,7 +708,7 @@ function realEvaluation() {
     function: "person_label",
     rev: 2,
     subject: "p1" as string | number,
-    result: "Real|Person" as JsonValue
+    result: "Real|Person" as unknown
   }
 }
 
