@@ -37,6 +37,9 @@ export type { UploadResult } from "./uploads.js"
 
 export { adoptFile, fileUrl } from "./user-uploads/server.js"
 
+export { deleteExports, exportUserUpload, writeExport } from "./exports.js"
+export type { ExportedFile, ExportOptions, ExportTarget } from "./exports.js"
+
 export { appDatabase } from "./db.js"
 export type { DbConnection } from "./db.js"
 export type { DbQueryLog } from "./db/query-logs.js"
