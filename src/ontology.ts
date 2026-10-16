@@ -268,9 +268,19 @@ export interface FunctionEvaluation<TResult = unknown> {
  * activated revision.
  *
  * @typeParam TResult - The expected shape of `result`; not checked at runtime.
- * @throws {@link TrellisAppApiError}; inspect `status`, `body.error`, and
- * `body.details?.code` (e.g. `FUNCTION_HYPOTHETICALS_INVALID`,
- * `FUNCTION_APPROVAL_REQUIRED`, `SUBJECT_NOT_FOUND`).
+ * @param evaluation - The function to evaluate, its subject and optional
+ * hypotheticals, and the constituent for staff sessions.
+ * @throws {@link TrellisAppApiError} whose `body.error` is one of:
+ * `bad_request` (400, malformed request, or a staff session without
+ * `constituentId`), `unauthorized` (401, anonymous deployment or rejected
+ * token), `not_found` (404, constituent not in the App's school),
+ * `functions_error` (400, 403, 404, 409, or 422), `functions_unavailable`
+ * (500), `functions_timeout` (504). For `functions_error`, `body.details.code`
+ * carries the reason, e.g. `FUNCTION_HYPOTHETICALS_INVALID` (422, a
+ * hypothetical names an undeclared argument or has the wrong type),
+ * `FUNCTION_APPROVAL_REQUIRED` (403), or `SUBJECT_NOT_FOUND` (404, missing or
+ * hidden from the App). A request with no session cookie throws 401 with a
+ * null `body`.
  *
  * @example
  * ```ts
