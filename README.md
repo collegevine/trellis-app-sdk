@@ -405,6 +405,36 @@ stored under that key), `file_too_large` (HTTP 400, over the 20MB cap),
 `unsupported_file_type` (HTTP 400, the bytes are not an accepted type), and
 `invalid_file` (HTTP 400, no filename).
 
+### Exports
+
+Exports are files the app produces for school staff to download from the
+platform, such as reports. They are write-only: the app can write and delete
+them, but cannot list or read them back.
+
+```ts
+import { deleteExports, exportUserUpload, writeExport } from "@collegevine/trellis-app-sdk"
+
+await writeExport("/reports/2026-q3.csv", csv, "text/csv")
+await exportUserUpload(s3Key, "/transcripts/hermione.pdf", {
+  expiresAt: new Date("2027-06-01")
+})
+await deleteExports({ prefix: "/reports/" })
+```
+
+`writeExport` takes a path, the bytes (`Uint8Array`, or a string sent as
+UTF-8), and a content type; each file is capped at 20MB. `exportUserUpload`
+copies a user-uploaded file from [User file uploads](#user-file-uploads) by its `s3Key` to the export namespace. Both return the file's record. Writing to a path that already holds a file
+replaces it.
+
+Paths are case-sensitive, start with `/`, have no empty, `.` or `..` segments,
+no control characters, and are at most 900 bytes. Folders are implicit.
+`deleteExports({ path })` deletes one file, and `deleteExports({ prefix })`
+deletes every file under a prefix ending in `/`. It returns the number of files
+deleted. Exactly one of `path` and `prefix` must be present, not both.
+
+A file expires 30 days after it is written unless `expiresAt` says otherwise,
+and at most 365 days after.
+
 ### Database
 
 Apps deployed with a database get a private Postgres schema and a
