@@ -123,7 +123,10 @@ export interface ActionArguments {
 export interface ExecuteActionRequest {
   action: ActionReference
   arguments: ActionArguments
-  /** Required for staff tokens; constituent tokens identify the constituent. */
+  /**
+   * Optional. Staff sessions that omit it run the Action with only the App's
+   * permissions, not the user's; constituent tokens identify the constituent.
+   */
   constituentId?: number
 }
 
@@ -148,7 +151,8 @@ export interface ActionReceipt {
 /**
  * Submit a published ontology Action for the current App user. Server-only.
  * Requires an authenticated deployment and a signed-in session. Staff callers
- * must supply `constituentId`; constituent sessions identify the constituent.
+ * may supply `constituentId`; without it the Action runs with only the App's
+ * permissions. Constituent sessions identify the constituent.
  *
  * Returns a receipt even when the Action is pending or failed. The SDK does
  * not retry submissions. Reuse `idempotencyKey` after a timeout or lost

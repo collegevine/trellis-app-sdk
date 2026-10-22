@@ -15,76 +15,91 @@ const BANNER_REQUESTS_URL =
 const ACTION = { dataSchema: "ontology_v1", key: "app_contract_post_note" }
 const CONSTITUENT_ID = 1
 
-test("the Monza Action reaches Banner once and deduplicates a repeated submission", {
-  timeout: 60_000
-}, async () => {
-  assert.equal(typeof sdk.executeAction, "function", "SDK must export executeAction")
-
-  const accessToken = process.env.TRELLIS_E2E_ACCESS_TOKEN
-  assert.ok(accessToken, "Set TRELLIS_E2E_ACCESS_TOKEN to a valid staff tau_ token")
-  const subjectId = process.env.TRELLIS_E2E_SUBJECT_ID?.trim()
-  assert.ok(subjectId, "Set TRELLIS_E2E_SUBJECT_ID to the seeded Banner person ID")
-
-  process.env.TRELLIS_APP_API_URL = API_URL
-  process.env.TRELLIS_APP_AUTH_MODE = "authenticated"
-  process.env.TRELLIS_APP_COOKIE_SIGNING_KEY ??= "ab".repeat(32)
-  process.env.TRELLIS_APP_COOKIE_NAME_PREFIX ??= "e2e"
-
-  const submission = randomUUID()
-  console.info(`submission=${submission}`)
-  const input = {
-    action: ACTION,
-    arguments: {
-      subject: subjectId,
-      params: { note: "SDK end-to-end test", submission },
-      idempotencyKey: submission
-    },
+const SCENARIOS = [
+  {
+    name: "with a constituent ID, as the staff user for that constituent",
     constituentId: CONSTITUENT_ID
+  },
+  {
+    name: "without a constituent ID, with only the App's permissions",
+    constituentId: undefined
   }
-  const session = {
-    accessToken,
-    expiresAt: Math.floor(Date.now() / 1000) + 300,
-    user: { name: "Monza test staff", emailHashes: [], subjectType: "school_user" }
-  }
-  const request = new Request("http://localhost:3000/", {
-    headers: {
-      cookie: sdk.signedCookieHeader({
-        name: SESSION_COOKIE,
-        value: session,
-        maxAgeSeconds: 300
-      }).split(";")[0]
+]
+
+for (const scenario of SCENARIOS) {
+  test(`the Monza Action reaches Banner once and deduplicates a repeated submission ${scenario.name}`, {
+    timeout: 60_000
+  }, async () => {
+    assert.equal(typeof sdk.executeAction, "function", "SDK must export executeAction")
+
+    const accessToken = process.env.TRELLIS_E2E_ACCESS_TOKEN
+    assert.ok(accessToken, "Set TRELLIS_E2E_ACCESS_TOKEN to a valid staff tau_ token")
+    const subjectId = process.env.TRELLIS_E2E_SUBJECT_ID?.trim()
+    assert.ok(subjectId, "Set TRELLIS_E2E_SUBJECT_ID to the seeded Banner person ID")
+
+    process.env.TRELLIS_APP_API_URL = API_URL
+    process.env.TRELLIS_APP_AUTH_MODE = "authenticated"
+    process.env.TRELLIS_APP_COOKIE_SIGNING_KEY ??= "ab".repeat(32)
+    process.env.TRELLIS_APP_COOKIE_NAME_PREFIX ??= "e2e"
+
+    const submission = randomUUID()
+    console.info(`submission=${submission} constituent_id=${scenario.constituentId ?? "omitted"}`)
+    const input = {
+      action: ACTION,
+      arguments: {
+        subject: subjectId,
+        params: { note: "SDK end-to-end test", submission },
+        idempotencyKey: submission
+      },
+      ...(scenario.constituentId === undefined
+        ? {}
+        : { constituentId: scenario.constituentId })
     }
+    const session = {
+      accessToken,
+      expiresAt: Math.floor(Date.now() / 1000) + 300,
+      user: { name: "Monza test staff", emailHashes: [], subjectType: "school_user" }
+    }
+    const request = new Request("http://localhost:3000/", {
+      headers: {
+        cookie: sdk.signedCookieHeader({
+          name: SESSION_COOKIE,
+          value: session,
+          maxAgeSeconds: 300
+        }).split(";")[0]
+      }
+    })
+
+    assert.equal((await matchingBannerRequests(submission)).length, 0)
+
+    const first = await runWithRequest({ request }, () => sdk.executeAction(input))
+    console.info(`first_receipt=${JSON.stringify(first)}`)
+    assertReceipt(first)
+    assert.equal(first.action, ACTION.key)
+    assert.equal(first.rev, 1)
+    assert.equal(first.deduped, false)
+    assert.ok(
+      !first.complete || first.succeeded,
+      `Action completed unsuccessfully: ${JSON.stringify(first)}`
+    )
+
+    await waitForBannerRequest(submission)
+
+    const second = await runWithRequest({ request }, () => sdk.executeAction(input))
+    console.info(`deduplicated_receipt=${JSON.stringify(second)}`)
+    assertReceipt(second)
+    assert.equal(second.action, ACTION.key)
+    assert.equal(second.rev, 1)
+    assert.equal(second.deduped, true)
+
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    const matches = await matchingBannerRequests(submission)
+    console.info(`banner_request_count=${matches.length}`)
+    assert.equal(matches.length, 1, "one idempotency key must cause one Banner request")
+    assert.equal(matches[0].authenticated, true)
+    assert.equal(matches[0].body.person_id, subjectId)
   })
-
-  assert.equal((await matchingBannerRequests(submission)).length, 0)
-
-  const first = await runWithRequest({ request }, () => sdk.executeAction(input))
-  console.info(`first_receipt=${JSON.stringify(first)}`)
-  assertReceipt(first)
-  assert.equal(first.action, ACTION.key)
-  assert.equal(first.rev, 1)
-  assert.equal(first.deduped, false)
-  assert.ok(
-    !first.complete || first.succeeded,
-    `Action completed unsuccessfully: ${JSON.stringify(first)}`
-  )
-
-  await waitForBannerRequest(submission)
-
-  const second = await runWithRequest({ request }, () => sdk.executeAction(input))
-  console.info(`deduplicated_receipt=${JSON.stringify(second)}`)
-  assertReceipt(second)
-  assert.equal(second.action, ACTION.key)
-  assert.equal(second.rev, 1)
-  assert.equal(second.deduped, true)
-
-  await new Promise((resolve) => setTimeout(resolve, 500))
-  const matches = await matchingBannerRequests(submission)
-  console.info(`banner_request_count=${matches.length}`)
-  assert.equal(matches.length, 1, "one idempotency key must cause one Banner request")
-  assert.equal(matches[0].authenticated, true)
-  assert.equal(matches[0].body.person_id, subjectId)
-})
+}
 
 function assertReceipt(receipt) {
   assert.match(
