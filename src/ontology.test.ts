@@ -243,6 +243,106 @@ describe("executeAction", () => {
     expect(init.headers.Authorization).toBe(`Bearer ${ACCESS_TOKEN}`)
   })
 
+  describe("with an optional constituent id", () => {
+    const action = { dataSchema: "ontology_v2", key: "submit_banner_form" }
+
+    it("accepts a request without constituentId at the type level", () => {
+      expectTypeOf<{
+        action: typeof action
+        arguments: { subject: number }
+      }>().toMatchTypeOf<ExecuteActionRequest>()
+    })
+
+    it.each(["school_user", "hq_user"] as const)(
+      "submits a %s action without constituent_id so it runs with only the App's permissions",
+      async (subjectType) => {
+        const receipt = completedReceipt()
+        fetchMock.mockResolvedValue(jsonResponse(200, { data: receipt }))
+
+        const result = await withSession(subjectType, () =>
+          executeAction({ action, arguments: { subject: 1042 } })
+        )
+
+        expect(result).toEqual(receipt)
+        expect(fetchMock).toHaveBeenCalledOnce()
+        const [, init] = fetchMock.mock.calls[0]!
+        expect(init.headers.Authorization).toBe(`Bearer ${ACCESS_TOKEN}`)
+        expect(JSON.parse(init.body as string)).toEqual({
+          action: { data_schema: "ontology_v2", key: "submit_banner_form" },
+          arguments: { subject: 1042 }
+        })
+      }
+    )
+
+    it.each(["school_user", "hq_user"] as const)(
+      "submits a %s action with constituent_id when one is given",
+      async (subjectType) => {
+        fetchMock.mockResolvedValue(jsonResponse(200, { data: completedReceipt() }))
+
+        await withSession(subjectType, () =>
+          executeAction({ action, arguments: { subject: 1042 }, constituentId: 130 })
+        )
+
+        const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string)
+        expect(body.constituent_id).toBe(130)
+      }
+    )
+
+    it("forwards a constituent session's constituentId unchanged for Rails to ignore", async () => {
+      fetchMock.mockResolvedValue(jsonResponse(200, { data: completedReceipt() }))
+
+      await withSession("constituent", () =>
+        executeAction({ action, arguments: { subject: "1042" }, constituentId: 130 })
+      )
+
+      const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string)
+      expect(body.constituent_id).toBe(130)
+    })
+
+    it("never sends constituent_id as null when it is omitted", async () => {
+      fetchMock.mockResolvedValue(jsonResponse(200, { data: completedReceipt() }))
+
+      await withSession("school_user", () =>
+        executeAction({ action, arguments: { subject: 1042 }, constituentId: undefined })
+      )
+
+      const raw = fetchMock.mock.calls[0]![1].body as string
+      expect(raw).not.toContain("constituent_id")
+    })
+
+    it("sends a constituentId of 0 rather than dropping it, leaving validation to Rails", async () => {
+      const body = {
+        error: "bad_request",
+        message: "constituent_id must be greater than or equal to 1"
+      }
+      fetchMock.mockResolvedValue(jsonResponse(400, body))
+
+      const error = await captureError(() =>
+        withSession("school_user", () =>
+          executeAction({ action, arguments: { subject: 1042 }, constituentId: 0 })
+        )
+      )
+
+      expect(JSON.parse(fetchMock.mock.calls[0]![1].body as string).constituent_id).toBe(0)
+      expect(error).toBeInstanceOf(TrellisAppApiError)
+      expect(error).toMatchObject({ status: 400, body })
+    })
+
+    it("still rejects an anonymous deployment when constituentId is omitted", async () => {
+      process.env.TRELLIS_APP_AUTH_MODE = "anonymous"
+
+      const error = await captureError(() =>
+        withSession("school_user", () =>
+          executeAction({ action, arguments: { subject: 1042 } })
+        )
+      )
+
+      expect(error).toBeInstanceOf(TrellisAppApiError)
+      expect(error).toMatchObject({ status: 401 })
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+  })
+
   it("returns a 200 receipt whose Action effect failed without treating it as an HTTP error", async () => {
     const receipt = completedReceipt()
     fetchMock.mockResolvedValue(jsonResponse(200, { data: receipt }))

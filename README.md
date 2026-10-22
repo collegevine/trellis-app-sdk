@@ -240,8 +240,9 @@ receives `ontology_forbidden` (HTTP 403); a school with no ontology
 configured receives `ontology_not_configured` (HTTP 422).
 
 Submit a published ontology Action with `executeAction`. This requires an
-authenticated App deployment and a signed-in session. Staff callers provide a
-`constituentId`; constituent sessions use their own identity.
+authenticated App deployment and a signed-in session. Staff callers may provide
+a `constituentId`; without one the Action runs with only the App's permissions,
+not the user's. Constituent sessions use their own identity.
 
 ```ts
 import { randomUUID } from "node:crypto"
