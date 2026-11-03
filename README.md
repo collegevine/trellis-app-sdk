@@ -165,15 +165,27 @@ letters, digits, `_` and `-`.
 ```ts
 import { queryTinybirdPipe } from "@collegevine/trellis-app-sdk"
 
-const result = await queryTinybirdPipe("agents__count", {
-  start_date: "2026-01-01"
+const { data } = await queryTinybirdPipe("agents__activity", {
+  q: `SELECT toDate(created_at) AS day, count() AS opens FROM _
+      WHERE action_or_event_id = 'email-opened'
+        AND created_at >= now() - INTERVAL 30 DAY
+      GROUP BY day ORDER BY day`
 })
 
-console.log(result.data)
+console.log(data)
 ```
 
-The school and agent-instance scope are filled in server-side; do not
-pass `school_id` or `agent_instance_id` yourself.
+`agents__activity` returns the school's agent activity rows, and `q` is
+ClickHouse SQL run over them, referenced as `_`.
+
+- `q`: required. Always filter on `created_at` and prefer aggregates.
+  An unfiltered query goes over Tinybird's 100 MiB limit and fails.
+- `target_agent_instance_ids`: optional, comma-separated agent ids
+  (`"25038,25041"`). Defaults to the app's own agent.
+
+Read the JSON columns with `JSONExtractString(col, 'key')`, not
+`col.key`. School and agent scope are set server-side, so do not pass
+`school_id`, `agent_instance_id`, or `reachable_agent_instance_ids`.
 
 ### Slate
 

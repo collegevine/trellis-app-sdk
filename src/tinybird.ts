@@ -42,15 +42,22 @@ export interface TinybirdResponse<TRow = Record<string, unknown>> {
 /**
  * Query a Tinybird pipe and return its rows. Server-only.
  *
- * The deployment's school and agent-instance scope are applied server-side, so
- * do not pass `school_id` or `agent_instance_id` yourself.
+ * Use the `agents__activity` pipe. It returns the school's agent activity
+ * rows, and `q` is ClickHouse SQL run over them, referenced as `_`.
  *
- * Only these pipes are reachable; any other name throws {@link TrellisAppApiError}
- * with `status` 404:
- * - `agents__count`
- * - `agents__raw_events`
- * - `agents__field_values`
- * - `agents__constituent_communications`
+ * Parameters:
+ * - `q`: required. Always filter on `created_at` and prefer aggregates. When
+ *   you need rows, select a few columns and add a `LIMIT`. An unfiltered
+ *   query goes over Tinybird's 100 MiB limit and fails.
+ * - `target_agent_instance_ids`: optional, comma-separated agent ids
+ *   (`"25038,25041"`). Defaults to the app's own agent.
+ *
+ * The JSON columns (`action_params_json`, `event_params_json`,
+ * `constituent_properties_json`) are text. Read them with
+ * `JSONExtractString(col, 'key')`, not `col.key`.
+ *
+ * School and agent scope are set server-side. Do not pass `school_id`,
+ * `agent_instance_id`, or `reachable_agent_instance_ids`.
  *
  * @param pipe - The pipe name to query.
  * @param params - Query parameters; `null`/`undefined` values are omitted.
@@ -58,8 +65,11 @@ export interface TinybirdResponse<TRow = Record<string, unknown>> {
  *
  * @example
  * ```ts
- * const { data } = await queryTinybirdPipe("agents__count", {
- *   start_date: "2026-01-01"
+ * const { data } = await queryTinybirdPipe("agents__activity", {
+ *   q: `SELECT toDate(created_at) AS day, count() AS opens FROM _
+ *       WHERE action_or_event_id = 'email-opened'
+ *         AND created_at >= now() - INTERVAL 30 DAY
+ *       GROUP BY day ORDER BY day`
  * })
  * ```
  */
