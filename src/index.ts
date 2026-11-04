@@ -42,7 +42,7 @@ export type { UploadResult } from "./uploads.js"
 
 export { adoptFile, fileUrl } from "./user-uploads/server.js"
 
-export { deleteExports, exportUserUpload, writeExport } from "./exports.js"
+export { deleteExports, exportUserUpload, setExportExpiration, writeExport } from "./exports.js"
 export type { ExportedFile, ExportOptions, ExportTarget } from "./exports.js"
 
 export { appDatabase } from "./db.js"

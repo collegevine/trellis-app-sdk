@@ -422,15 +422,21 @@ stored under that key), `file_too_large` (HTTP 400, over the 20MB cap),
 
 Exports are files the app produces for school staff to download from the
 platform, such as reports. They are write-only: the app can write and delete
-them, but cannot list or read them back.
+them, and change when they expire, but cannot list or read them back.
 
 ```ts
-import { deleteExports, exportUserUpload, writeExport } from "@collegevine/trellis-app-sdk"
+import {
+  deleteExports,
+  exportUserUpload,
+  setExportExpiration,
+  writeExport
+} from "@collegevine/trellis-app-sdk"
 
 await writeExport("/reports/2026-q3.csv", csv, "text/csv")
 await exportUserUpload(s3Key, "/transcripts/hermione.pdf", {
   expiresAt: new Date("2027-06-01")
 })
+await setExportExpiration({ prefix: "/transcripts/" }, new Date("2027-01-31"))
 await deleteExports({ prefix: "/reports/" })
 ```
 
@@ -446,7 +452,11 @@ deletes every file under a prefix ending in `/`. It returns the number of files
 deleted. Exactly one of `path` and `prefix` must be present, not both.
 
 A file expires 30 days after it is written unless `expiresAt` says otherwise,
-and at most 365 days after.
+and at most 365 days after. `setExportExpiration` changes the expiration of one
+file or every file under a prefix, and returns the number of files changed. The
+new time has to be after each file's last write and at most 365 days after the
+last write; when it's outside that range for any one file, the whole operation
+is aborted.
 
 ### Database
 

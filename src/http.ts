@@ -30,7 +30,7 @@ export class TrellisAppApiError extends Error {
 }
 
 export interface RequestOptions {
-  method?: "GET" | "POST" | "DELETE"
+  method?: "GET" | "POST" | "PATCH" | "DELETE"
   // When set, JSON-encoded into the request body and Content-Type is set.
   body?: unknown
 }
