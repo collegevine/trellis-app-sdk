@@ -1,5 +1,7 @@
 export { TrellisAppApiError } from "./http.js"
 
+export { getAppConfig } from "./config.js"
+
 export {
   clearedCookieHeader,
   readSignedCookie,

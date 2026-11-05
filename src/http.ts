@@ -33,6 +33,9 @@ export interface RequestOptions {
   method?: "GET" | "POST" | "DELETE"
   // When set, JSON-encoded into the request body and Content-Type is set.
   body?: unknown
+  // Authenticate as the deployment regardless of auth mode, for calls that
+  // belong to the app rather than to the signed-in user.
+  withDeploymentSecret?: boolean
 }
 
 // Calls the Trellis App API at `path`, parses the `{ data: ... }` envelope,
@@ -46,12 +49,16 @@ export interface RequestOptions {
 //     in user. The auth middleware is responsible for ensuring a valid
 //     session before user code runs; the SDK throws 401 if the cookie
 //     is missing or expired.
+//
+// `withDeploymentSecret` sends TRELLIS_APP_API_SECRET regardless of auth mode.
 export async function request<T>(
   path: string,
   options: RequestOptions = {}
 ): Promise<T> {
   const baseUrl = readEnv(ENV_TRELLIS_APP_API_URL)
-  const authorization = authorizationHeader()
+  const authorization = options.withDeploymentSecret
+    ? deploymentSecretHeader()
+    : authorizationHeader()
 
   const headers: Record<string, string> = {
     Authorization: authorization,
@@ -109,6 +116,10 @@ function authorizationHeader(): string {
   if (readAuthMode() === AUTH_MODE_AUTHENTICATED) {
     return `Bearer ${readUserAccessToken()}`
   }
+  return deploymentSecretHeader()
+}
+
+function deploymentSecretHeader(): string {
   return `Bearer ${readEnv(ENV_TRELLIS_APP_API_SECRET)}`
 }
 

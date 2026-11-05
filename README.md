@@ -124,6 +124,23 @@ A "Sign out" link is just a link to `/api/trellis-auth/logout`.
 
 ## Usage
 
+### Config
+
+Settings and secrets the app reads at run time, such as which program to
+show or a passcode, go in the `config_values` of the `deploy_app` MCP tool
+rather than in the source. Every value is a string; encode numbers and lists
+as strings and parse them in the app. The values are stored encrypted.
+
+```ts
+import { getAppConfig } from "@collegevine/trellis-app-sdk"
+
+const program = (await getAppConfig()).PROGRAM ?? "MBA"
+```
+
+`getAppConfig()` fetches the values from the platform and caches them for the
+life of the process. A failed fetch is not cached. The values may hold secrets,
+so call it on the server and never send them to the browser.
+
 ### Signed cookies
 
 Store small values the visitor must not be able to change. Values are
