@@ -30,7 +30,7 @@ export class TrellisAppApiError extends Error {
 }
 
 export interface RequestOptions {
-  method?: "GET" | "POST" | "DELETE"
+  method?: "GET" | "POST" | "PATCH" | "DELETE"
   // When set, JSON-encoded into the request body and Content-Type is set.
   body?: unknown
 }
@@ -50,6 +50,17 @@ export async function request<T>(
   path: string,
   options: RequestOptions = {}
 ): Promise<T> {
+  const { data } = await requestEnvelope<T, unknown>(path, options)
+  return data
+}
+
+// Like `request`, but returns the whole `{ data, meta }` envelope, for list
+// endpoints that carry pagination in `meta`. `meta` is `undefined` when the
+// response has none.
+export async function requestEnvelope<T, M>(
+  path: string,
+  options: RequestOptions = {}
+): Promise<{ data: T; meta: M }> {
   const baseUrl = readEnv(ENV_TRELLIS_APP_API_URL)
   const authorization = authorizationHeader()
 
@@ -64,7 +75,39 @@ export async function request<T>(
     headers,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined
   })
-  return unwrapResponse<T>(response)
+  return parseEnvelope<T, M>(response)
+}
+
+// Throws the 401 the API would return, without calling it, for operations
+// that accept only a signed-in user's token (`AppSession`). Sending the
+// deployment secret of an anonymous deployment to them can only fail, so the
+// secret is never sent.
+export function requireAuthenticatedMode(operation: string): void {
+  if (readAuthMode() === AUTH_MODE_AUTHENTICATED) return
+  const message = `${operation} requires an authenticated Trellis App session`
+  throw new TrellisAppApiError(message, 401, { error: "unauthorized", message })
+}
+
+// Drops keys whose value is `undefined`, so optional fields the caller left
+// out are not sent. `null` is kept: it is a meaningful value (e.g. "clear").
+export function withoutUndefined(
+  fields: Record<string, unknown>
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(fields).filter(([, value]) => value !== undefined)
+  )
+}
+
+// `?key=value&...` for the defined entries of `params`, or "" when none are.
+export function queryString(
+  params: Record<string, string | number | undefined>
+): string {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) search.append(key, String(value))
+  }
+  const encoded = search.toString()
+  return encoded ? `?${encoded}` : ""
 }
 
 // Calls the Trellis App API at `path` with a raw file body (not JSON), used
@@ -91,6 +134,13 @@ export async function requestRaw<T>(
 }
 
 async function unwrapResponse<T>(response: Response): Promise<T> {
+  const { data } = await parseEnvelope<T, unknown>(response)
+  return data
+}
+
+async function parseEnvelope<T, M>(
+  response: Response
+): Promise<{ data: T; meta: M }> {
   const text = await response.text()
 
   if (!response.ok) {
@@ -102,7 +152,8 @@ async function unwrapResponse<T>(response: Response): Promise<T> {
   }
 
   const body = parseJsonBody(text, response.status, { strict: true })
-  return (body as { data: T }).data
+  const { data, meta } = body as { data: T; meta: M }
+  return { data, meta }
 }
 
 function authorizationHeader(): string {
