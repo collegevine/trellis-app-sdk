@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { deleteExports, exportUserUpload, writeExport } from "../src/index.js"
+import { deleteExports, exportUserUpload, setExportExpiration, writeExport } from "../src/index.js"
 
 const BASE_URL = "https://api.example.com/trellis/apps/api/v1/"
 const SECRET = "tas_mischief-managed"
@@ -98,6 +98,31 @@ describe("deleteExports", () => {
     expect(fileInit.method).toBe("DELETE")
     expect(JSON.parse(fileInit.body)).toEqual({ path: "/hogwarts/house-points.csv" })
     expect(JSON.parse(folderInit.body)).toEqual({ prefix: "/hogwarts/" })
+  })
+})
+
+describe("setExportExpiration", () => {
+  it("PATCHes one file by path or a folder by prefix with the time, returning the changed count", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ data: { updated_count: 1 } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { updated_count: 3 } }))
+
+    const fileCount = await setExportExpiration({ path: "/hogwarts/house-points.csv" }, EXPIRES_AT)
+    const folderCount = await setExportExpiration({ prefix: "/hogwarts/" }, EXPIRES_AT)
+
+    expect([fileCount, folderCount]).toEqual([1, 3])
+    const [fileUrl, fileInit] = fetchMock.mock.calls[0]!
+    const [, folderInit] = fetchMock.mock.calls[1]!
+    expect(fileUrl).toBe("https://api.example.com/trellis/apps/api/v1/exports/expiration")
+    expect(fileInit.method).toBe("PATCH")
+    expect(JSON.parse(fileInit.body)).toEqual({
+      path: "/hogwarts/house-points.csv",
+      expires_at: "2026-11-01T00:00:00.000Z"
+    })
+    expect(JSON.parse(folderInit.body)).toEqual({
+      prefix: "/hogwarts/",
+      expires_at: "2026-11-01T00:00:00.000Z"
+    })
   })
 })
 
