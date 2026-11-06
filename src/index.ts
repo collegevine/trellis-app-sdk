@@ -57,5 +57,70 @@ export type { ApiCallLog } from "./api-log.js"
 export { getConstituentProperties } from "./constituent-properties.js"
 export type { ConstituentProperties } from "./constituent-properties.js"
 
+export {
+  cancelTask,
+  createTask,
+  getTask,
+  listTasks,
+  publishTask,
+  updateTask
+} from "./tasks.js"
+export type {
+  CreateTaskInput,
+  FilterDisplayNames,
+  ListTasksOptions,
+  SegmentFilter,
+  Task,
+  TaskFields,
+  TaskListMeta,
+  TaskPage,
+  TaskStatus,
+  TaskSummary,
+  TaskVersion
+} from "./tasks.js"
+
+export {
+  cancelTaskMission,
+  checkTaskMissionLaunch,
+  checkWorkflowMissionLaunch,
+  createTaskMission,
+  createWorkflowMission,
+  deleteWorkflowMission,
+  getMissionOptions,
+  getTaskMission,
+  getWorkflowMission,
+  launchTaskMission,
+  launchWorkflowMission,
+  listMissions,
+  pauseWorkflowMission,
+  updateTaskMission,
+  updateWorkflowMission
+} from "./missions.js"
+export type {
+  CreateTaskMissionInput,
+  CreateWorkflowMissionInput,
+  GoalFilter,
+  GoalFilterInput,
+  ListMissionsOptions,
+  MissionChange,
+  MissionChannel,
+  MissionKind,
+  MissionLaunch,
+  MissionLaunchCheck,
+  MissionListMeta,
+  MissionOptions,
+  MissionPage,
+  MissionState,
+  MissionSummary,
+  MissionTab,
+  NamedRef,
+  SegmentRef,
+  SenderOption,
+  TaskMissionDetail,
+  TaskMissionFields,
+  WorkflowMissionDetail,
+  WorkflowMissionFields
+} from "./missions.js"
+
 export { Logger } from "./logging.js"
 export type { AppLogLine, LogLevel } from "./logging.js"

@@ -47,6 +47,9 @@
     "test": "vitest run",
     "test:e2e:actions": "npm run build && node --test e2e/ontology-actions.test.mjs",
     "test:e2e:functions": "npm run build && node --test e2e/ontology-functions.test.mjs",
+    "test:e2e:tasks": "npm run build && node --test e2e/tasks.test.mjs",
+    "test:e2e:missions": "npm run build && node --test e2e/missions.test.mjs",
+    "test:e2e:tasks-missions": "npm run build && node --test --test-concurrency=1 e2e/tasks.test.mjs e2e/missions.test.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

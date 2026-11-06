@@ -465,6 +465,83 @@ deleted. Exactly one of `path` and `prefix` must be present, not both.
 A file expires 30 days after it is written unless `expiresAt` says otherwise,
 and at most 365 days after.
 
+### Tasks
+
+Tasks are instructions an agent carries out for the constituents its filters
+select. The Task functions need an authenticated deployment and a signed-in
+operator (an HQ or school user, not a constituent). The App's agent must have a
+product, and the agent you name must be in the App's scope and visible to the
+operator. Writes also need write access.
+
+```ts
+import { createTask, listTasks, publishTask, updateTask } from "@collegevine/trellis-app-sdk"
+
+const draft = await createTask(agentId, {
+  title: "FAFSA check-in",
+  instructionText: "Ask each student whether their FAFSA is submitted.",
+  startTime: new Date("2026-11-10T14:00:00Z")
+})
+await updateTask(agentId, draft.task_id, { endTime: null }) // creates a new version
+await publishTask(agentId, draft.task_id)
+
+const { items, meta } = await listTasks(agentId, { limit: 50, offset: 0 })
+console.log(meta.pagination?.total)
+```
+
+Inputs are camelCase. Responses keep the API's snake_case fields.
+`additionalFilters`, `goalFilters` and `metadata` are sent as given. Tasks that
+run a mission reject changes with 409 `mission_task`. Use the Mission functions
+for those.
+
+### Missions
+
+Missions live in the App agent's product. There are two kinds, and their ids
+are separate sequences. Workflow missions use `getWorkflowMission`,
+`updateWorkflowMission`, `deleteWorkflowMission`, `checkWorkflowMissionLaunch`,
+`launchWorkflowMission` and `pauseWorkflowMission`. Task missions use
+`getTaskMission`, `updateTaskMission`, `checkTaskMissionLaunch`,
+`launchTaskMission` and `cancelTaskMission`. Pick the function by the `kind`
+of a `MissionSummary`.
+
+The operator needs the `tester` platform role at the school to read missions
+and `user` to change them. Missions must be enabled for the school and the
+operator. Task missions also need the school's task-missions flag.
+
+```ts
+import {
+  checkWorkflowMissionLaunch,
+  createWorkflowMission,
+  getMissionOptions,
+  launchWorkflowMission,
+  listMissions
+} from "@collegevine/trellis-app-sdk"
+
+const { senders } = await getMissionOptions()
+const mission = await createWorkflowMission({
+  channel: "email",
+  name: "Deposit nudge",
+  instructions: "Remind admitted students the deposit is due.",
+  segmentUid: "seg_admitted_fall_2027",
+  permissionGroupId: 501,
+  senderId: senders.email?.[0]?.id,
+  goalFilters: [{ type: "string_match", propertyKey: "deposit_status", value: ["paid"] }],
+  endsAt: "2026-12-15"
+})
+
+const { problems } = await checkWorkflowMissionLaunch(mission.id)
+if (problems.length === 0) {
+  const { launch } = await launchWorkflowMission(mission.id)
+  // "started", "already_running", or "pending_approval" (HTTP 202, not an error)
+}
+
+const { items, meta } = await listMissions({ tab: "drafts", perPage: 25 })
+if (meta.has_more) { /* fetch page 2 */ }
+```
+
+`listMissions` returns `has_more` but no total. Multichannel missions are not
+listed, and the per-mission functions reject them with 422
+`unsupported_mission`.
+
 ### Database
 
 Apps deployed with a database get a private Postgres schema and a
@@ -521,3 +598,36 @@ npm install
 npm test
 npm run build
 ```
+
+### End-to-end tests against Rails
+
+The Tasks and Missions suites (`e2e/tasks.test.mjs`, `e2e/missions.test.mjs`)
+run the flows from the Rails `AppTaskMissionLifecycle` live test through the
+SDK, as a deployed authenticated App would. `e2e/support.mjs` runs each SDK
+call with a signed session cookie holding one of the fixture's real `tau_`
+tokens.
+
+They read the same fixture as the Rails test. Point `APP_TASKS_MISSIONS_FIXTURE`
+at the `.env.app-tasks-missions-fixture.json` that the Rails seed writes, or
+copy that file to this repo's root (it is gitignored). The fixture has three
+actors (`operator`, `no_team`, `property_granted`), the operator App's
+deployment secret, the host and owner agents, two segments, a sender, the App's
+team, and a constituent property key. The suites publish tasks and launch
+missions, so they refuse to run unless the fixture is the local synthetic Monza
+one: Monza's school id, an `http://localhost` Rails URL, a sender domain ending
+in `.invalid`, and different owner and host agents.
+
+```bash
+APP_TASKS_MISSIONS_FIXTURE=/path/to/.env.app-tasks-missions-fixture.json \
+  npm run test:e2e:tasks-missions
+```
+
+Run both files with `test:e2e:tasks-missions`, which runs them one at a time.
+If the files run in parallel, a task mission creates a task on the host agent
+while the Tasks suite is checking that a rejected create added no task. The
+permission tests skip when the fixture lacks the `no_team` or
+`property_granted` actor.
+
+The Rails test also posts a foreign `product_id` and expects Rails to ignore it.
+The SDK cannot send that field, so `src/missions.test.ts` checks that request
+bodies carry named inputs only.

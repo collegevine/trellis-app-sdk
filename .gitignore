@@ -6,3 +6,5 @@ docs
 coverage
 .vscode
 .idea
+# Local e2e fixtures written by the Rails seed; they hold tau_/tas_ tokens.
+.env.app-*-fixture.json
