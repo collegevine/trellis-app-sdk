@@ -2,6 +2,7 @@ import { request, requestRaw } from "./http.js"
 
 const EXPORTS_PATH = "exports"
 const EXPORT_USER_UPLOAD_PATH = "exports/adopt"
+const EXPORT_EXPIRATION_PATH = "exports/expiration"
 
 /**
  * A file the app has exported, as returned by {@link writeExport} and
@@ -31,8 +32,9 @@ export interface ExportOptions {
 }
 
 /**
- * What {@link deleteExports} deletes: one file by its `path`, or every file in
- * a folder by its `prefix`, which ends in `/`.
+ * What {@link deleteExports} deletes, or {@link setExportExpiration} changes:
+ * one file by its `path`, or every file in a folder by its `prefix`, which ends
+ * in `/`.
  */
 export type ExportTarget =
   | { path: string; prefix?: never }
@@ -142,4 +144,38 @@ export async function deleteExports(target: ExportTarget): Promise<number> {
     body: target
   })
   return deleted_count
+}
+
+/**
+ * Given a single exported file, or every exported file in a folder, changes
+ * those files' expiration time (i.e. time when the platform will automatically
+ * delete the files) and returns how many files were changed. Server-side only.
+ * A non-existent file does not fail and returns 0.
+ *
+ * `expiresAt` has to be after each file's last write time, but no more than 365
+ * days after the last write time. When it's outside that range for any one
+ * file, the whole operation is aborted. Passing a time in the past will have
+ * the effect of deleting the files within about an hour.
+ *
+ * @param target - `{ path }` for one file, or `{ prefix }` for a folder, e.g.
+ * `{ prefix: "/reports/" }`. The prefix `/` changes all of the app's exports.
+ * `path` and `prefix` cannot be both present.
+ * @param expiresAt - New expiration time.
+ * @throws {@link TrellisAppApiError} whose `body.error` is one of:
+ * `invalid_path` (400), `invalid_prefix` (400, including one that does not end
+ * in `/`), `invalid_expires_at` (400, not after the last write of every file,
+ * or more than 365 days after it).
+ *
+ * @example
+ * ```ts
+ * await setExportExpiration({ path: "/reports/2026-q3.csv" }, new Date("2027-01-31"))
+ * await setExportExpiration({ prefix: "/reports/" }, new Date("2027-04-30"))
+ * ```
+ */
+export async function setExportExpiration(target: ExportTarget, expiresAt: Date): Promise<number> {
+  const { updated_count } = await request<{ updated_count: number }>(EXPORT_EXPIRATION_PATH, {
+    method: "PATCH",
+    body: { ...target, expires_at: expiresAt.toISOString() }
+  })
+  return updated_count
 }
