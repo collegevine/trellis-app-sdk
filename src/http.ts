@@ -38,19 +38,21 @@ export interface RequestOptions {
   withDeploymentSecret?: boolean
 }
 
-// Calls the Trellis App API at `path`, parses the `{ data: ... }` envelope,
-// and returns the unwrapped payload. Throws TrellisAppApiError on any
-// non-2xx response or when a 2xx body fails to parse as JSON. The
-// Authorization header depends on the deployment's auth mode:
+// Calls the Trellis App API at `path`, parses the `{ data: ... }` envelope, and
+// returns the unwrapped payload. Throws TrellisAppApiError on any non-2xx
+// response or when a 2xx body fails to parse as JSON. The credentials depend on
+// the deployment's auth mode:
 //
-//   - anonymous (default): TRELLIS_APP_API_SECRET from env.
-//   - authenticated: per-user access token read from the session cookie
-//     on the current request, so the API call is scoped to the signed-
-//     in user. The auth middleware is responsible for ensuring a valid
-//     session before user code runs; the SDK throws 401 if the cookie
-//     is missing or expired.
+//     - anonymous (default): TRELLIS_APP_API_SECRET from env.
+//     - authenticated: per-user access token read from the session cookie
+//       on the current request, so the API call is scoped to the signed-
+//       in user, plus TRELLIS_APP_API_SECRET in the "X-Deployment-Secret"
+//       header. The auth middleware is responsible for ensuring a valid
+//       session before user code runs; the SDK throws 401 if the cookie
+//       is missing or expired.
 //
-// `withDeploymentSecret` sends TRELLIS_APP_API_SECRET regardless of auth mode.
+// `withDeploymentSecret` sends TRELLIS_APP_API_SECRET alone regardless of auth
+// mode.
 export async function request<T>(
   path: string,
   options: RequestOptions = {}
@@ -67,12 +69,9 @@ export async function requestEnvelope<T, M>(
   options: RequestOptions = {}
 ): Promise<{ data: T; meta: M }> {
   const baseUrl = readEnv(ENV_TRELLIS_APP_API_URL)
-  const authorization = options.withDeploymentSecret
-    ? deploymentSecretHeader()
-    : authorizationHeader()
 
   const headers: Record<string, string> = {
-    Authorization: authorization,
+    ...authHeaders(options.withDeploymentSecret),
     Accept: "application/json"
   }
   if (options.body !== undefined) headers["Content-Type"] = "application/json"
@@ -131,7 +130,7 @@ export async function requestRaw<T>(
   const response = await loggedApiFetch(joinUrl(baseUrl, path), {
     method,
     headers: {
-      Authorization: authorizationHeader(),
+      ...authHeaders(),
       Accept: "application/json",
       "Content-Type": contentType
     },
@@ -163,15 +162,19 @@ async function parseEnvelope<T, M>(
   return { data, meta }
 }
 
-function authorizationHeader(): string {
-  if (readAuthMode() === AUTH_MODE_AUTHENTICATED) {
-    return `Bearer ${readUserAccessToken()}`
+function authHeaders(withDeploymentSecret = false): Record<string, string> {
+  if (withDeploymentSecret || readAuthMode() !== AUTH_MODE_AUTHENTICATED) {
+    return { Authorization: `Bearer ${readEnv(ENV_TRELLIS_APP_API_SECRET)}` }
   }
-  return deploymentSecretHeader()
-}
 
-function deploymentSecretHeader(): string {
-  return `Bearer ${readEnv(ENV_TRELLIS_APP_API_SECRET)}`
+  // In authenticated mode, the user token identifies the user, but it must be
+  // transmitted only together with the app secret, because the token can be
+  // freely extracted by the user from their cookie, and we don't want them to
+  // be able to call the API without going through the app.
+  return {
+    Authorization: `Bearer ${readUserAccessToken()}`,
+    "X-Deployment-Secret": readEnv(ENV_TRELLIS_APP_API_SECRET)
+  }
 }
 
 // Read the session cookie off the current request, which the Lambda

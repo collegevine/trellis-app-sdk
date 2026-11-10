@@ -77,11 +77,14 @@ test("an undeclared hypothetical argument is rejected with FUNCTION_HYPOTHETICAL
 function setUp() {
   const accessToken = process.env.TRELLIS_E2E_ACCESS_TOKEN
   assert.ok(accessToken, "Set TRELLIS_E2E_ACCESS_TOKEN to a valid staff tau_ token")
+  const deploymentSecret = process.env.TRELLIS_E2E_DEPLOYMENT_SECRET
+  assert.ok(deploymentSecret, "Set TRELLIS_E2E_DEPLOYMENT_SECRET to the token's App's tas_ secret")
   const subjectId = process.env.TRELLIS_E2E_SUBJECT_ID?.trim()
   assert.ok(subjectId, "Set TRELLIS_E2E_SUBJECT_ID to the function subject's entity key")
 
   process.env.TRELLIS_APP_API_URL = API_URL
   process.env.TRELLIS_APP_AUTH_MODE = "authenticated"
+  process.env.TRELLIS_APP_API_SECRET = deploymentSecret
   process.env.TRELLIS_APP_COOKIE_SIGNING_KEY ??= "ab".repeat(32)
   process.env.TRELLIS_APP_COOKIE_NAME_PREFIX ??= "e2e"
 

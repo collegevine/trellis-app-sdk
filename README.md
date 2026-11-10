@@ -298,10 +298,11 @@ the same `idempotencyKey` so the server can deduplicate it. API errors retain
 their HTTP status and body in `TrellisAppApiError`.
 
 With the seeded Monza fixture running locally, set `TRELLIS_E2E_ACCESS_TOKEN`
-to a valid staff `tau_` token and `TRELLIS_E2E_SUBJECT_ID` to the seeded Banner
-person ID, then run `npm run test:e2e:actions`. The test sends a fresh synthetic
-submission and checks the local Banner mock for one authenticated request after
-repeating the same idempotency key.
+to a valid staff `tau_` token, `TRELLIS_E2E_DEPLOYMENT_SECRET` to the `tas_`
+deployment secret of that token's App, and `TRELLIS_E2E_SUBJECT_ID` to the
+seeded Banner person ID, then run `npm run test:e2e:actions`. The test sends a
+fresh synthetic submission and checks the local Banner mock for one
+authenticated request after repeating the same idempotency key.
 
 ### LLM inference
 
@@ -615,14 +616,14 @@ The Tasks and Missions suites (`e2e/tasks.test.mjs`, `e2e/missions.test.mjs`)
 run the flows from the Rails `AppTaskMissionLifecycle` live test through the
 SDK, as a deployed authenticated App would. `e2e/support.mjs` runs each SDK
 call with a signed session cookie holding one of the fixture's real `tau_`
-tokens.
+tokens, and with the deployment secret of that token's App.
 
 They read the same fixture as the Rails test. Point `APP_TASKS_MISSIONS_FIXTURE`
 at the `.env.app-tasks-missions-fixture.json` that the Rails seed writes, or
 copy that file to this repo's root (it is gitignored). The fixture has three
-actors (`operator`, `no_team`, `property_granted`), the operator App's
-deployment secret, the host and owner agents, two segments, a sender, the App's
-team, and a constituent property key. The suites publish tasks and launch
+actors (`operator`, `no_team`, `property_granted`), each with its App's token
+and deployment secret, the host and owner agents, two segments, a sender, the
+App's team, and a constituent property key. The suites publish tasks and launch
 missions, so they refuse to run unless the fixture is the local synthetic Monza
 one: Monza's school id, an `http://localhost` Rails URL, a sender domain ending
 in `.invalid`, and different owner and host agents.

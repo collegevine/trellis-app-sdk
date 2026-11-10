@@ -167,7 +167,7 @@ describe("executeAction", () => {
     expectTypeOf(executeAction).toMatchTypeOf<ExecuteAction>()
   })
 
-  it("submits the complete request with the user's access token and returns the pending receipt", async () => {
+  it("submits the complete request with the user's access token and the deployment secret, and returns the pending receipt", async () => {
     const receipt = {
       invocation: "0192c7a0-0000-7000-8000-000000000000",
       action: "submit_banner_form",
@@ -204,6 +204,7 @@ describe("executeAction", () => {
     expect(init.method).toBe("POST")
     expect(init.headers).toEqual({
       Authorization: `Bearer ${ACCESS_TOKEN}`,
+      "X-Deployment-Secret": SECRET,
       Accept: "application/json",
       "Content-Type": "application/json"
     })
@@ -449,7 +450,7 @@ describe("evaluateFunction", () => {
   })
 
   describe("evaluating with real data", () => {
-    it("POSTs a staff evaluation with the user's access token and returns the unwrapped evaluation", async () => {
+    it("POSTs a staff evaluation with the user's access token and the deployment secret, and returns the unwrapped evaluation", async () => {
       const evaluation = {
         function: "person_label",
         rev: 2,
@@ -476,6 +477,7 @@ describe("evaluateFunction", () => {
       expect(init.method).toBe("POST")
       expect(init.headers).toEqual({
         Authorization: `Bearer ${ACCESS_TOKEN}`,
+        "X-Deployment-Secret": SECRET,
         Accept: "application/json",
         "Content-Type": "application/json"
       })

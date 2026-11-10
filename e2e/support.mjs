@@ -19,8 +19,8 @@
 //     "property_key": "...",
 //     "apps": {
 //       "operator":         { "staff_token": "tau_...", "deployment_secret": "tas_..." },
-//       "no_team":          { "staff_token": "tau_..." },
-//       "property_granted": { "staff_token": "tau_..." }
+//       "no_team":          { "staff_token": "tau_...", "deployment_secret": "tas_..." },
+//       "property_granted": { "staff_token": "tau_...", "deployment_secret": "tas_..." }
 //     }
 //   }
 //
@@ -98,12 +98,14 @@ export function hasActor(actor) {
 /**
  * Runs `fn` as the fixture's `actor` (default `operator`) signed in to an
  * authenticated App deployment, so SDK calls inside it send
- * `Authorization: Bearer <that actor's tau_ token>` to Rails.
+ * `Authorization: Bearer <that actor's tau_ token>` and that App's deployment
+ * secret to Rails.
  */
 export function asActor(actor, fn) {
-  const token = fixture().apps?.[actor]?.staff_token
-  assert.ok(token, `The fixture has no apps.${actor}.staff_token`)
-  return withToken(token, fn)
+  const app = fixture().apps?.[actor]
+  assert.ok(app?.staff_token, `The fixture has no apps.${actor}.staff_token`)
+  assert.ok(app.deployment_secret, `The fixture has no apps.${actor}.deployment_secret`)
+  return withToken(app.staff_token, fn, app.deployment_secret)
 }
 
 /** Shorthand for `asActor("operator", fn)`. */
@@ -112,11 +114,13 @@ export function asOperator(fn) {
 }
 
 /**
- * Runs `fn` with `token` as the session's access token. Use a real `tau_`
- * token for an operator; any other credential checks that Rails rejects it.
+ * Runs `fn` with `token` as the session's access token and `secret` as the
+ * deployment secret. Use a real `tau_` token for an operator; any other
+ * credential checks that Rails rejects it.
  */
-export function withToken(token, fn) {
+export function withToken(token, fn, secret = fixture().apps.operator.deployment_secret) {
   configureSdk("authenticated")
+  process.env.TRELLIS_APP_API_SECRET = secret
   const session = {
     accessToken: token,
     expiresAt: Math.floor(Date.now() / 1000) + 300,
@@ -149,7 +153,6 @@ function configureSdk(authMode) {
   process.env.TRELLIS_APP_AUTH_MODE = authMode
   process.env.TRELLIS_APP_COOKIE_SIGNING_KEY ??= "ab".repeat(32)
   process.env.TRELLIS_APP_COOKIE_NAME_PREFIX ??= "e2e"
-  if (authMode === "authenticated") delete process.env.TRELLIS_APP_API_SECRET
 }
 
 /** A short name unique to this run, like the Rails test's `uuid4().hex[:12]`. */
