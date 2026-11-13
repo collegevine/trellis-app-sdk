@@ -16,6 +16,7 @@ import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { createRequestHandler } from "react-router"
 import { withAuth } from "./auth/rrv7-middleware.js"
+import { compress, MIN_COMPRESSIBLE_BYTES, preferredEncoding } from "./compression.js"
 import { runWithRequest } from "./context.js"
 import { installJsonLogging } from "./logging.js"
 import { logRequestEnd, logRequestStart } from "./request-log.js"
@@ -55,6 +56,11 @@ export type LambdaHandler = (
   event: APIGatewayProxyEventV2,
   context: LambdaContext
 ) => Promise<APIGatewayProxyStructuredResultV2>
+
+// Bodies of these types go back to API Gateway as UTF-8 text, and are the
+// ones worth compressing. Everything else is passed through as base64 bytes.
+const TEXT_CONTENT_TYPE =
+  /^(text\/|application\/(json|javascript|xml|x-www-form-urlencoded))/
 
 // Where RRv7 emits the server build inside the Lambda deployment package.
 const RRV7_SERVER_BUILD_PATH = "server/index.js"
@@ -109,7 +115,7 @@ async function runFetchHandler(
     logRequestEnd({ request, status: result.status, durationMs: Date.now() - startedAt })
     return result
   })
-  return await responseToLambdaResult(response)
+  return await responseToLambdaResult(request, response)
 }
 
 function lambdaEventToRequest(event: APIGatewayProxyEventV2): Request {
@@ -139,6 +145,7 @@ function lambdaEventToRequest(event: APIGatewayProxyEventV2): Request {
 }
 
 async function responseToLambdaResult(
+  request: Request,
   response: Response
 ): Promise<APIGatewayProxyStructuredResultV2> {
   // Headers.forEach folds multiple Set-Cookie values into a single
@@ -152,16 +159,34 @@ async function responseToLambdaResult(
 
   const buffer = Buffer.from(await response.arrayBuffer())
   const contentType = response.headers.get("content-type") ?? ""
+  // A body the app already encoded is bytes, whatever its content type.
   const isText =
-    /^(text\/|application\/(json|javascript|xml|x-www-form-urlencoded))/.test(
-      contentType
-    )
+    TEXT_CONTENT_TYPE.test(contentType) && !response.headers.has("content-encoding")
+  const encoding =
+    isText && buffer.length >= MIN_COMPRESSIBLE_BYTES
+      ? preferredEncoding(request.headers.get("accept-encoding"))
+      : null
 
+  if (!encoding) {
+    return {
+      statusCode: response.status,
+      headers,
+      cookies,
+      body: isText ? buffer.toString("utf-8") : buffer.toString("base64"),
+      isBase64Encoded: !isText
+    }
+  }
+
+  delete headers["content-length"]
   return {
     statusCode: response.status,
-    headers,
+    headers: {
+      ...headers,
+      "content-encoding": encoding,
+      vary: headers.vary ? `${headers.vary}, Accept-Encoding` : "Accept-Encoding"
+    },
     cookies,
-    body: isText ? buffer.toString("utf-8") : buffer.toString("base64"),
-    isBase64Encoded: !isText
+    body: compress(buffer, encoding).toString("base64"),
+    isBase64Encoded: true
   }
 }

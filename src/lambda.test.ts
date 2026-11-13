@@ -1,3 +1,4 @@
+import { brotliDecompressSync, gunzipSync, gzipSync } from "node:zlib"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { currentRequestId } from "./context.js"
 import {
@@ -171,6 +172,72 @@ describe("createLambdaHandler", () => {
 
     expect(result.isBase64Encoded).toBe(false)
     expect(result.body).toBe("<h1>Hello, Naboo</h1>")
+  })
+
+  describe("compression", () => {
+    const script = "console.log('These are not the droids you are looking for.');\n".repeat(100)
+    const scriptResponse: FetchHandler = async () =>
+      new Response(script, {
+        headers: {
+          "content-type": "text/javascript; charset=utf-8",
+          "content-length": String(script.length),
+          vary: "Cookie"
+        }
+      })
+
+    const requestWith = (acceptEncoding?: string) =>
+      createLambdaHandler(scriptResponse)(
+        baseEvent({
+          headers: {
+            host: "x-wing.dagobah.apps.collegevine.ai",
+            ...(acceptEncoding ? { "accept-encoding": acceptEncoding } : {})
+          }
+        }),
+        baseContext()
+      )
+
+    it("compresses textual bodies with Brotli when the browser accepts it", async () => {
+      const result = await requestWith("gzip, deflate, br, zstd")
+
+      const compressed = Buffer.from(result.body, "base64")
+      expect(result.isBase64Encoded).toBe(true)
+      expect(result.headers["content-encoding"]).toBe("br")
+      expect(result.headers.vary).toBe("Cookie, Accept-Encoding")
+      expect(result.headers["content-length"]).toBeUndefined()
+      expect(compressed.length).toBeLessThan(script.length / 10)
+      expect(brotliDecompressSync(compressed).toString()).toBe(script)
+    })
+
+    it("falls back to gzip when the client does not accept Brotli", async () => {
+      const result = await requestWith("gzip;q=1.0, identity;q=0.5")
+
+      expect(result.headers["content-encoding"]).toBe("gzip")
+      expect(gunzipSync(Buffer.from(result.body, "base64")).toString()).toBe(script)
+    })
+
+    it("sends the body as is when the client accepts no compression", async () => {
+      const result = await requestWith()
+
+      expect(result.isBase64Encoded).toBe(false)
+      expect(result.headers["content-encoding"]).toBeUndefined()
+      expect(result.body).toBe(script)
+    })
+
+    it("passes a body the app already encoded through untouched", async () => {
+      const gzipped = gzipSync(script)
+      const fetchHandler: FetchHandler = async () =>
+        new Response(gzipped, {
+          headers: { "content-type": "application/json", "content-encoding": "gzip" }
+        })
+
+      const result = await createLambdaHandler(fetchHandler)(
+        baseEvent({ headers: { "accept-encoding": "br, gzip" } }),
+        baseContext()
+      )
+
+      expect(result.headers["content-encoding"]).toBe("gzip")
+      expect(Buffer.from(result.body, "base64")).toEqual(gzipped)
+    })
   })
 
   it("runs the handler within a request scope carrying the Lambda request id", async () => {

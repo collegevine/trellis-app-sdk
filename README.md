@@ -66,8 +66,8 @@ Database-enabled apps additionally get:
 |                | Trellis RDS Proxy. The password is an IAM token the |
 |                | SDK mints per connection, so it is absent here.    |
 
-These are injected automatically into Vercel-deployed Trellis Apps;
-supply them yourself when running locally.
+These are injected automatically into deployed Trellis Apps; supply
+them yourself when running locally.
 
 ## Authentication modes
 
@@ -80,18 +80,11 @@ serves all visitors without sign-in.
 
 End users sign in through the main CollegeVine Rails app, the SDK
 forwards a per-user access token to the API, and pages are gated by
-middleware.
+the SDK's Lambda adapter.
 
-The agent does not write `middleware.ts`. Trellis injects it into the
-deployed file set (on top of the agent's tarball) whenever an app is
-deployed in authenticated mode. The injected content is just a single
-re-export from this package, equivalent to:
-
-```ts
-export { middleware, config } from "@collegevine/trellis-app-sdk/auth/middleware"
-```
-
-The middleware:
+The app does not write any auth code. In authenticated mode, the
+adapter runs every request through a sign-in check before the app's
+own routes:
 
 - Gates every non-static path: a missing, expired, edited, or unsigned
   session cookie redirects to the auth flow. Session and sign-in state
@@ -99,16 +92,15 @@ The middleware:
 - Serves the three OAuth control paths (`login`, `callback`, `logout`)
   itself; no extra route handlers needed.
 
-Anonymous-mode apps do not get a `middleware.ts` at all.
+In anonymous mode the check is skipped.
 
-To read the signed-in user from a server component or route handler:
+To read the signed-in user from a loader or action:
 
 ```ts
 import { getTrellisUser } from "@collegevine/trellis-app-sdk/auth/server"
 
-export default async function Page() {
-  const user = await getTrellisUser()
-  return <p>Hello, {user?.name ?? "there"}</p>
+export function loader() {
+  return { name: getTrellisUser()?.name ?? "there" }
 }
 ```
 
@@ -117,7 +109,7 @@ not surface user id or email to the deployed app; the API call itself
 is already scoped to the signed-in user on the server side, so the
 app does not need to identify them. `getTrellisUser()` returns `null`
 when there is no live, correctly signed session, and always in
-anonymous mode; in authenticated mode the middleware will have
+anonymous mode; in authenticated mode the sign-in check will have
 redirected before the page renders.
 
 A "Sign out" link is just a link to `/api/trellis-auth/logout`.
@@ -595,11 +587,11 @@ try {
 ```
 
 In authenticated mode, a 401 from the SDK with no body indicates the
-session cookie was missing or expired; the middleware should have
+session cookie was missing or expired; the sign-in check should have
 redirected the user to `/api/trellis-auth/login` before the API call
-reached the SDK, so seeing this error usually means the middleware was
-not mounted or the page was reached through some path the matcher
-excludes.
+reached the SDK. The check skips `/assets/*` and `/favicon.ico`, so
+seeing this error usually means the call ran outside a request the
+check covers.
 
 ## Development
 
